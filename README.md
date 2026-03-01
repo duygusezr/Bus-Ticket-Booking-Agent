@@ -1,93 +1,177 @@
-# 🎭 ELA: 20-Year-Old Virtual AI Companion
+# 🎭 ELA: Gerçek Zamanlı 3D Avatar AI Companion
 
-Bu proje, gerçek zamanlı konuşma yeteneğine sahip, 3D VRM avatar destekli ve gelişmiş bir duygu sistemine sahip bir yapay zeka asistanıdır. **ELA**, sadece bir asistan değil, Duygu Sezer tarafından geliştirilmiş, dijital bir dünyada yaşayan ama gerçek bir insan gibi tepki veren bir arkadaştır.
-
----
-
-## ✨ Öne Çıkan Özellikler
-
-- **🤖 Akıllı Beyin:** Google'ın en yeni **Gemini 2.5 Flash** modeli ile yüksek hızda, zeki ve tutarlı sohbet.
-- **🎭 Duygu & Hareket Sistemi (ACT):** LLM'den gelen özel `<|ACT:...|>` tokenları sayesinde ELA gerçek zamanlı olarak duygulanır ve hareket eder.
-- **🗣️ Doğal Ses:** **ElevenLabs** (Premium) veya **Edge-TTS** (Ücretsiz) seçenekleriyle insan kadar gerçekçi seslendirme.
-- **👁️ Canlı Avatar:**
-  - **Nefes Alma:** Omuzların ve göğsün hareket ettiği doğal nefes simülasyonu.
-  - **Boşta Hareket (Idle):** Karakterin beklerken doğal bakışları ve kafa hareketleri.
-  - **Duygusal Tepkiler:** Mutlu, üzgün, düşünceli (`think`), meraklı (`curious`), şaşkın gibi 10'dan fazla ifade.
-  - **Dudak Senkronizasyonu:** Sesin frekansına göre milisaniyelik hassasiyette ağız hareketleri.
-- **🎙️ STT (Sesten Metne):** Whisper (OpenAI) ile mükemmel ses anlama yeteneği.
+**ELA**, Google Gemini, ElevenLabs TTS, Whisper STT ve Three.js VRM teknolojilerini bir araya getiren gerçek zamanlı bir dijital arkadaştır. Duygu Sezer tarafından geliştirilmiştir.
 
 ---
 
-## 🛠️ Kurulum ve Çalıştırma
+## ✨ Özellikler
 
-Proje iki ana bölümden oluşmaktadır: **Backend (Python)** ve **Frontend (Static HTML/JS)**.
+### 🤖 AI & Dil
 
-### 1. Backend Kurulumu
+- **Google Gemini 2.5 Flash** ile akıllı, hızı sohbet
+- **Çoklu API Key Rotasyonu** — kota dolunca otomatik sıradaki key'e geçer
+- **Türkçe / İngilizce** dil desteği — sekme bazlı dil seçimi
+- Dil kuralı zorunlu: TR sekmesinde Türkçe, EN sekmesinde İngilizce cevap
+- Kimlik koruması: ELA kendini asla "Google Gemini" veya "yapay zeka" olarak tanıtmaz
 
-1. **Dizine gidin:** `cd backend`
-2. **Sanal ortam oluşturun ve aktif edin:**
+### 🎭 Duygu & Hareket Sistemi (ACT)
 
-    ```powershell
-    python -m venv venv
-    .\venv\Scripts\activate
-    ```
+- LLM yanıtlarından `<|ACT:"emotion":{"name":"..."}|>` tokenları parse edilir
+- 10 duygu: `happy`, `sad`, `angry`, `think`, `surprised`, `awkward`, `curious`, `question`, `relaxed`, `neutral`
+- Duyguya göre kafa açısı, yüz ifadesi ve göz hareketi değişir
+- Backend + Frontend çift katmanlı parse sistemi
 
-3. **Bağımlılıkları yükleyin:**
+### 🗣️ Ses Sistemi
 
-    ```powershell
-    pip install -r requirements.txt
-    ```
+- **ElevenLabs Scribe** ile yüksek kaliteli STT
+- **ElevenLabs TTS** ile doğal seslendirme
+- ACT tokenları TTS'e gönderilmeden temizlenir — sadece saf metin seslendirilir
+- ElevenLabs rate limit (429) hatalarında kullanıcıya anlamlı mesaj
 
-4. **Yapılandırma (.env):**
-    `.env` dosyasını açın ve şu anahtarları girin:
+### 💾 Semantic Cache
 
-    ```dotenv
-    GOOGLE_API_KEY=... (Gemini API Anahtarı)
-    ELEVENLABS_API_KEY=... (ElevenLabs API Anahtarı)
-    SYSTEM_PROMPT=... (ELA'nın kişiliği ve kuralları)
-    GEMINI_CHAT_MODEL=gemini-2.5-flash
-    ```
+- `sentence-transformers/all-MiniLM-L6-v2` ile anlam bazlı cache
+- Diske kayıt — sunucu yeniden başlatılınca cache korunur
+- Score 0.95+ eşiğinde HIT, ~0.005-0.010s yanıt süresi
+- Maksimum 500 öğe, FIFO temizleme
 
-5. **Sunucuyu başlatın:**
+### 🧠 Duygu Analizi
 
-    ```powershell
-    .\venv\Scripts\python.exe main.py
-    ```
+- **Öncelik 1:** LLM yanıtındaki ACT token (en güvenilir)
+- **Öncelik 2:** `cardiffnlp/twitter-xlm-roberta-base-sentiment` — Türkçe dahil 100+ dil
+- **Öncelik 3:** Fallback → neutral
 
-### 2. Frontend Çalıştırma
+### 👁️ 3D Avatar (Three.js + VRM)
 
-Frontend tarafı herhangi bir derleme gerektirmez, sadece bir HTTP sunucusu ile açılmalıdır.
+- Nefes alma animasyonu (omuz, göğüs, boyun)
+- Boşta kafa hareketi (idle)
+- Göz kırpma (rastgele, çift kırpma dahil)
+- Dudak senkronizasyonu (Web Audio API frekans analizi)
+- Göz hareketi (yaw/pitch kontrolü)
 
-1. **VS Code:** "Live Server" eklentisini kullanabilirsiniz.
-2. **Python ile:**
+---
 
-    ```powershell
-    # Proje ana dizininde (avatar/)
-    python -m http.server 8000
-    ```
+## 🛠️ Kurulum
 
-3. Tarayıcıda `http://localhost:8000` adresine gidin.
+### Gereksinimler
+
+- Python 3.11+
+- Node.js (opsiyonel, sadece geliştirme için)
+- Google Gemini API key
+- ElevenLabs API key
+
+### Backend Kurulumu
+
+```powershell
+cd backend
+python -m venv venv
+.\venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Yapılandırma (.env)
+
+```dotenv
+ELEVENLABS_API_KEY=your_key
+ELEVENLABS_VOICE_ID=your_voice_id
+GOOGLE_API_KEY=your_primary_key
+GOOGLE_API_KEYS=key1,key2,key3        # Çoklu key rotasyonu
+GEMINI_CHAT_MODEL=gemini-2.5-flash
+DEFAULT_LANG=tr
+PORT=8001
+CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+```
+
+> **Not:** System prompt artık `.env`'de değil, `backend/config.py` içinde tanımlıdır.
+
+---
+
+## 🚀 Çalıştırma
+
+### Tek Komutla Başlat (Önerilen)
+
+```powershell
+# Proje ana dizininde
+start.bat
+```
+
+`start.bat` otomatik olarak backend ve frontend'i başlatır, tarayıcıyı açar.
+
+### Manuel Başlatma
+
+**Backend:**
+
+```powershell
+cd backend
+.\venv\Scripts\python.exe main.py
+```
+
+**Frontend:**
+
+```powershell
+# Proje ana dizininde (backend değil)
+python -m http.server 3000
+```
+
+Tarayıcıda `http://localhost:3000` aç.
+
+> ⚠️ Live Server kullanma — WebSocket bağlantısını koparır.
 
 ---
 
 ## 📂 Proje Yapısı
 
-- `backend/`: FastAPI sunucusu ve AI servisleri.
-  - `routers/`: Sohbet, Ses, Metin ve Duygu endpoint'leri.
-  - `services/`: Gemini, ElevenLabs ve Whisper entegrasyonları.
-- `main.js`: Three.js VRM kontrolü, ACT token işleme ve animasyon motoru.
-- `models/`: Karakterin 3D model dosyası (`character.vrm`).
-- `style.css`: Glassmorphism ve modern UI tasarımı.
+```text
+avatar/
+├── start.bat                     # Tek tıkla başlatma
+├── index.html                    # Ana sayfa
+├── main.js                       # Three.js, VRM, WebSocket, ACT parser
+├── style.css                     # UI tasarımı
+├── models/
+│   └── character.vrm             # 3D avatar modeli
+└── backend/
+    ├── main.py                   # FastAPI uygulaması
+    ├── config.py                 # Ayarlar + System Prompt
+    ├── requirements.txt
+    ├── .env                      # API key'ler
+    ├── routers/
+    │   ├── chat.py               # WebSocket + REST sohbet endpoint'leri
+    │   ├── stt.py                # Ses → Metin endpoint'i
+    │   └── tts.py                # Metin → Ses endpoint'i
+    └── services/
+        ├── llm_service.py        # Gemini entegrasyonu + key rotasyonu
+        ├── tts_service.py        # ElevenLabs TTS
+        ├── stt_service.py        # ElevenLabs Scribe STT
+        ├── emotion_service_v2.py # ACT token + XLM-RoBERTa duygu analizi
+        ├── semantic_cache_service.py  # Anlam bazlı cache
+        └── memory_service.py     # Konuşma özeti (her 10 mesajda bir)
+```
 
 ---
 
-## 🚀 Kişilik Kuralları (ELA)
+## ⚡ Performans
 
-ELA ile konuşurken şunları fark edeceksiniz:
+| Metrik | Süre |
+| --- | --- |
+| STT (ses → metin) | ~0.8–1.2s |
+| Semantic Cache HIT | ~0.005–0.012s |
+| LLM yanıt (stream) | ~1.5–3.5s |
+| TTS (metin → ses) | ~1.2–1.6s |
+| Duygu analizi (ACT token) | ~0.000s |
+| Duygu analizi (transformer) | ~0.02–0.04s |
 
-- Kısa ve doğal cümleler kurar.
-- Emojileri sese dönüştürürken bir yapay zekanın takılmaması için kullanmaz.
-- Konuşmasına `<|ACT:...|>` ifadeleriyle duygu katar.
-- Sıcak, meraklı ve sakin bir genç kadın gibi davranır.
+---
 
-Keyifli sohbetler! 🎭✨
+## 🔧 Mimari Notlar
+
+- **WebSocket** üzerinden streaming — metin LLM'den gelirken ekranda görünür
+- **API key rotasyonu** — 429 hatası alınınca otomatik sıradaki key'e geçer, maksimum `n_keys` deneme sonrası hata mesajı verir
+- **Memory service** — her 10 mesajda bir Gemini ile özet üretir, RAM'de tutar
+- **CORS** — sadece `.env`'deki `CORS_ORIGINS` listesindeki originlere izin verir
+- **Lifespan** — FastAPI modern `lifespan` context manager kullanır (`@app.on_event` deprecated)
+
+---
+
+## 👩‍💻 Geliştirici
+
+**Duygu Sezer** — ELA'nın yaratıcısı
