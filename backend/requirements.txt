@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+edge-tts
+elevenlabs
+python-dotenv
+python-multipart
+websockets
+httpx
+watchfiles
+google-genai
+torch
+transformers
+groq
+langchain
+langchain-google-genai
+sentence-transformers
+sentencepiece

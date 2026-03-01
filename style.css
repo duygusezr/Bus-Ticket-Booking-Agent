@@ -1,0 +1,411 @@
+/* Temel Sıfırlama ve Atmosferik Arka Plan */
+body,
+html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #0d0b14;
+    /* Resim yüklenene kadar veya kenarlarda görünecek baz renk */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #fff;
+}
+
+#app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+/* Arka Plan Resmi ve Blur Efekti */
+#app::before {
+    content: "";
+    position: absolute;
+    top: -20px;
+    left: -20px;
+    right: -20px;
+    bottom: -20px;
+    background-image: url('./house_bg.jpg');
+    /* Mevcut resim */
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    filter: blur(2px);
+    /* Bulanıklık miktarı (isteğe göre değiştirilebilir) */
+    z-index: 0;
+}
+
+/* 3D Canvas - Karakter Arkası */
+#canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    /* UI'ın arkasında */
+}
+
+/* UI Katmanı */
+.ui-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 2;
+    /* Canvas'ın önünde */
+    pointer-events: none;
+    /* Tıklamaların canvasa geçmesini sağlar */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+/* Etkileşimli UI elementleri için pointer-events açılır */
+.header,
+.subtitle-container,
+.bottom-bar {
+    pointer-events: auto;
+}
+
+/* Üst Kısım (FPS ve Başlık) */
+.header {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent);
+}
+
+.title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    font-size: 1.5rem;
+    letter-spacing: 2px;
+    text-shadow: 0 0 15px rgba(255, 192, 203, 0.4);
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.icon-btn {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(5px);
+    transition: all 0.2s;
+}
+
+.icon-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Sidebar Genel */
+.sidebar {
+    position: absolute;
+    top: 0;
+    width: 300px;
+    height: 100%;
+    background: rgba(13, 11, 20, 0.85);
+    backdrop-filter: blur(15px);
+    z-index: 100;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+}
+
+.sidebar.left {
+    left: -320px;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar.left.open {
+    left: 0;
+}
+
+.sidebar.right {
+    right: -320px;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar.right.open {
+    right: 0;
+}
+
+.sidebar-header {
+    padding: 30px 20px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #ffc0cb;
+}
+
+/* Duygu Grafiği Alanı */
+.emotion-container {
+    padding: 20px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.emotion-stats {
+    padding: 20px;
+    text-align: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+#current-emotion-badge {
+    display: inline-block;
+    padding: 8px 20px;
+    background: rgba(255, 192, 203, 0.15);
+    border: 1px solid rgba(255, 192, 203, 0.3);
+    border-radius: 20px;
+    color: #ffc0cb;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+}
+
+.history-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.history-item {
+    padding: 12px 15px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    font-size: 14px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+    cursor: default;
+    line-height: 1.4;
+}
+
+.history-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 192, 203, 0.2);
+}
+
+.history-item.user {
+    border-left: 3px solid #ffc0cb;
+}
+
+.history-item.ai {
+    border-left: 3px solid #64b5f6;
+    /* AI için mavi tonu */
+    background: rgba(100, 181, 246, 0.05);
+}
+
+.history-item .role {
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 800;
+    margin-bottom: 5px;
+    opacity: 0.6;
+}
+
+.history-list::-webkit-scrollbar {
+    width: 5px;
+}
+
+.history-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 192, 203, 0.2);
+    border-radius: 10px;
+}
+
+.history-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 192, 203, 0.4);
+}
+
+#fps-counter {
+    background: rgba(0, 0, 0, 0.4);
+    padding: 6px 12px;
+    border-radius: 10px;
+    font-family: monospace;
+    font-size: 14px;
+    backdrop-filter: blur(5px);
+    width: max-content;
+}
+
+.lang-switcher {
+    display: flex;
+    gap: 5px;
+}
+
+.lang-btn {
+    width: 35px;
+    height: 35px;
+    font-size: 12px;
+    border-radius: 8px;
+    font-weight: bold;
+}
+
+.lang-btn.active {
+    background: rgba(255, 192, 203, 0.6);
+    border-color: rgba(255, 192, 203, 0.8);
+    box-shadow: 0 0 10px rgba(255, 192, 203, 0.3);
+}
+
+.spacer {
+    display: none;
+}
+
+/* Alt Yazı Alanı */
+.subtitle-container {
+    text-align: center;
+    margin-top: auto;
+    margin-bottom: 30px;
+    /* Karakterin yüzünü kapatmaması için ekranın altına çekildi */
+}
+
+#subtitle {
+    display: inline-block;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 15px 30px;
+    border-radius: 20px;
+    font-size: 18px;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    max-width: 80%;
+    word-wrap: break-word;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* Alt Bar (Kontroller) */
+.bottom-bar {
+    display: flex;
+    gap: 10px;
+    padding: 20px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
+    align-items: center;
+    justify-content: center;
+}
+
+button {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    width: 50px;
+    height: 50px;
+    border-radius: 25px;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(5px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+button:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+}
+
+button:active {
+    transform: scale(0.95);
+}
+
+#mic-btn.recording {
+    background: rgba(255, 68, 68, 0.6);
+    border-color: #ff4444;
+    animation: pulse 1.5s infinite;
+}
+
+.input-wrapper {
+    flex: 1;
+    max-width: 600px;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+#chat-input {
+    width: 100%;
+    height: 50px;
+    border-radius: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.4);
+    color: white;
+    padding: 0 20px;
+    font-size: 16px;
+    backdrop-filter: blur(5px);
+    outline: none;
+    transition: all 0.3s ease;
+    box-sizing: border-box;
+}
+
+#chat-input:focus {
+    border-color: rgba(255, 192, 203, 0.6);
+    /* Arkaplanla (pembe) daha uyumlu */
+    box-shadow: 0 0 10px rgba(255, 192, 203, 0.2);
+    background: rgba(0, 0, 0, 0.6);
+}
+
+#chat-input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+#send-btn {
+    background: rgba(255, 192, 203, 0.2);
+    border-color: rgba(255, 192, 203, 0.4);
+}
+
+#send-btn:hover {
+    background: rgba(255, 192, 203, 0.4);
+}
+
+/* Kayıt sırasındaki vuruntu efekti */
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.4);
+    }
+
+    70% {
+        box-shadow: 0 0 0 15px rgba(255, 68, 68, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 68, 68, 0);
+    }
+}

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AvatarAI Chatbot Arayüzü</title>
+    <link rel="stylesheet" href="./style.css">
+    <!-- FontAwesome İkonları için CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+        integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- Three.js ve VRM Modülleri için Import Map -->
+    <!-- CDN üzerinden r164 sürümü ve @pixiv/three-vrm kullanılıyor -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.164.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.164.0/examples/jsm/",
+            "@pixiv/three-vrm": "https://unpkg.com/@pixiv/three-vrm@3.0.0/lib/three-vrm.module.js"
+        }
+    }
+    </script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div id="app">
+        <!-- 3D Render Alanı -->
+        <canvas id="canvas"></canvas>
+
+        <!-- Sol Sidebar (Sohbet Geçmişi) -->
+        <div id="history-sidebar" class="sidebar left">
+            <div class="sidebar-header">
+                <h2><i class="fa-solid fa-clock-rotate-left"></i> Geçmiş</h2>
+                <button id="close-sidebar" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="history-list" class="history-list">
+                <!-- Geçmiş mesajlar buraya gelecek -->
+            </div>
+        </div>
+
+        <!-- Sağ Sidebar (Duygu Analizi) -->
+        <div id="emotion-sidebar" class="sidebar right">
+            <div class="sidebar-header">
+                <h2><i class="fa-solid fa-heart-pulse"></i> Duygu Grafiği</h2>
+                <button id="close-emotion-sidebar" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="emotion-container">
+                <canvas id="emotionChart"></canvas>
+            </div>
+            <div class="emotion-stats">
+                <div id="current-emotion-badge">Nötr</div>
+            </div>
+        </div>
+
+        <!-- UI Katmanı -->
+        <div class="ui-layer">
+            <div class="header">
+                <div class="header-left">
+                    <button id="toggle-sidebar" class="icon-btn" title="Geçmişi Göster"><i
+                            class="fa-solid fa-bars"></i></button>
+                    <div id="fps-counter"><i class="fa-solid fa-gauge"></i> FPS: 0</div>
+                </div>
+                <h1 class="title">AvatarAI</h1>
+                <div class="header-right">
+                    <div class="lang-switcher">
+                        <button id="lang-tr" class="lang-btn active" title="Türkçe">TR</button>
+                        <button id="lang-en" class="lang-btn" title="English">EN</button>
+                    </div>
+                    <button id="toggle-emotion-sidebar" class="icon-btn" title="Duygu Analizi"><i
+                            class="fa-solid fa-chart-line"></i></button>
+                </div>
+            </div>
+
+            <div class="subtitle-container">
+                <p id="subtitle">Merhaba! Ben Ela. Benimle konuşmaya başlayabilirsin.</p>
+            </div>
+
+            <div class="bottom-bar">
+                <button id="mic-btn" title="Basılı tutarak konuş"><i class="fa-solid fa-microphone"></i></button>
+                <button id="audio-btn" title="Sesi Aç/Kapat"><i class="fa-solid fa-volume-high"></i></button>
+                <div class="input-wrapper">
+                    <input type="text" id="chat-input" placeholder="Bir mesaj yazın..." />
+                </div>
+                <button id="send-btn" title="Gönder"><i class="fa-solid fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ana JavaScript -->
+    <script type="module" src="./main.js"></script>
+</body>
+
+</html>
