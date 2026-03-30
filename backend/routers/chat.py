@@ -11,6 +11,7 @@ from services.tts_service import generate_tts
 from services.emotion_service_v2 import analyze_sentiment_v2
 from services.semantic_cache_service import semantic_cache
 from config import settings
+from services.tools import validate_seat_selection
 
 router = APIRouter()
 
@@ -19,12 +20,53 @@ class ChatRequest(BaseModel):
     lang: Optional[str] = settings.DEFAULT_LANG
     history: List[Dict[str, str]] = []
 
+
+def _extract_last_assistant_text(history: List[Dict[str, str]]) -> str:
+    """Return the latest assistant message from history."""
+    for msg in reversed(history or []):
+        if msg.get("role") == "assistant":
+            return str(msg.get("content", "") or "")
+    return ""
+
+
+def _try_direct_seat_validation(text: str, history: List[Dict[str, str]]) -> Optional[str]:
+    """
+    Deterministic seat validation shortcut.
+    If user sends a direct seat input right after a message containing
+    'Boş koltuklar: ...', validate with tool function directly.
+    """
+    user_text = (text or "").strip()
+    if not user_text:
+        return None
+
+    last_assistant = _extract_last_assistant_text(history)
+    if not last_assistant:
+        return None
+
+    seat_list_match = re.search(r"Boş koltuklar:\s*([0-9,\s]+)", last_assistant, flags=re.IGNORECASE)
+    if not seat_list_match:
+        return None
+
+    # Only short seat-like inputs should use this guardrail path.
+    # Accept "5", "12", "beş", "on iki" etc. and avoid hijacking long messages.
+    if not re.fullmatch(r"[0-9]{1,2}|[a-zA-ZçğıöşüÇĞİÖŞÜ\s]{2,12}", user_text):
+        return None
+
+    available_seats = seat_list_match.group(1).strip()
+    return validate_seat_selection(user_text, available_seats)
+
 @router.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
     """REST tabanlı (streaming olmayan) tam sohbet endpoint'i."""
     try:
         import time
         t_start = time.perf_counter()
+        lang = request.lang or settings.DEFAULT_LANG
+
+        direct_seat_response = _try_direct_seat_validation(request.text, request.history)
+        if direct_seat_response:
+            print(f"--- [REST DIRECT SEAT] --- TOTAL: {time.perf_counter() - t_start:.3f}s")
+            return {"text": direct_seat_response, "audio": await generate_tts(direct_seat_response, lang), "emotion": "relaxed"}
 
         cached_match = semantic_cache.search(request.text)
         if cached_match:
@@ -36,10 +78,10 @@ async def chat_endpoint(request: ChatRequest):
             }
 
         # Gemini ile yanıt üret (tool calling + doğal dil tek adımda)
-        response_text = await generate_chat_response(request.text, request.history, request.lang)
+        response_text = await generate_chat_response(request.text, request.history, lang)
         t_llm = time.perf_counter()
 
-        audio_base64 = await generate_tts(response_text, request.lang)
+        audio_base64 = await generate_tts(response_text, lang)
         t_tts = time.perf_counter()
 
         emotion = await analyze_sentiment_v2(response_text)
@@ -69,10 +111,20 @@ async def websocket_chat(websocket: WebSocket):
 
             text = request_data.get("text", "")
             history = request_data.get("history", [])
-            lang = request_data.get("lang", settings.DEFAULT_LANG)
+            lang = request_data.get("lang") or settings.DEFAULT_LANG
 
             import time
             t_ws_start = time.perf_counter()
+
+            direct_seat_response = _try_direct_seat_validation(text, history)
+            if direct_seat_response:
+                await websocket.send_json({"type": "text", "content": direct_seat_response})
+                audio_base64 = await generate_tts(direct_seat_response, lang)
+                await websocket.send_json({"type": "audio", "content": audio_base64})
+                await websocket.send_json({"type": "emotion", "content": "relaxed"})
+                await websocket.send_json({"type": "done"})
+                print(f"[WS DIRECT SEAT] Time: {time.perf_counter() - t_ws_start:.3f}s")
+                continue
 
             # 0. Semantic Cache
             cached_ws_match = semantic_cache.search(text)

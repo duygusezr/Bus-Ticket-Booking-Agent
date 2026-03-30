@@ -41,7 +41,7 @@ def _build_system_prompt(lang: str, summary: str) -> str:
 async def generate_chat_response(text: str, history: List[Dict[str, str]], lang: str, session_id: str = "default") -> str:
     """Gemini ile sohbet yanıtı üretir."""
     try:
-        from services.tools import get_bus_trips, make_reservation, validate_seat_selection
+        from services.tools import get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number
         summary = get_current_summary(session_id)
         system_prompt = _build_system_prompt(lang, summary)
         
@@ -52,7 +52,7 @@ async def generate_chat_response(text: str, history: List[Dict[str, str]], lang:
             model=GEMINI_MODEL,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
-                tools=[get_bus_trips, make_reservation, validate_seat_selection],
+                tools=[get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number],
                 temperature=0.3
             ),
             history=gemini_history
@@ -73,7 +73,7 @@ async def generate_chat_response_stream(text: str, history: List[Dict[str, str]]
     summary = get_current_summary(session_id)
     system_prompt = _build_system_prompt(lang, summary)
     try:
-        from services.tools import get_bus_trips, make_reservation, validate_seat_selection
+        from services.tools import get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number
         client = _build_gemini_client()
         gemini_history = _build_history_gemini(history)
         
@@ -81,7 +81,7 @@ async def generate_chat_response_stream(text: str, history: List[Dict[str, str]]
             model=GEMINI_MODEL,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
-                tools=[get_bus_trips, make_reservation, validate_seat_selection],
+                tools=[get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number],
                 temperature=0.3
             ),
             history=gemini_history

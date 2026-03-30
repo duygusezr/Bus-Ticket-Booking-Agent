@@ -5,6 +5,80 @@ from elevenlabs.client import ElevenLabs
 from config import settings
 import edge_tts
 
+TR_UNITS = ["sifir", "bir", "iki", "uc", "dort", "bes", "alti", "yedi", "sekiz", "dokuz"]
+TR_TENS = ["", "on", "yirmi", "otuz", "kirk", "elli", "altmis", "yetmis", "seksen", "doksan"]
+
+
+def _number_to_turkish(n: int) -> str:
+    if n == 0:
+        return "sifir"
+    if n < 0:
+        return "eksi " + _number_to_turkish(-n)
+
+    def under_thousand(x: int) -> str:
+        parts = []
+        hundreds = x // 100
+        rem = x % 100
+        tens = rem // 10
+        units = rem % 10
+        if hundreds:
+            if hundreds == 1:
+                parts.append("yuz")
+            else:
+                parts.append(f"{TR_UNITS[hundreds]} yuz")
+        if tens:
+            parts.append(TR_TENS[tens])
+        if units:
+            parts.append(TR_UNITS[units])
+        return " ".join(parts)
+
+    parts = []
+    millions = n // 1_000_000
+    n %= 1_000_000
+    thousands = n // 1_000
+    n %= 1_000
+
+    if millions:
+        parts.append(f"{under_thousand(millions)} milyon")
+    if thousands:
+        parts.append("bin" if thousands == 1 else f"{under_thousand(thousands)} bin")
+    if n:
+        parts.append(under_thousand(n))
+    return " ".join(parts).strip()
+
+
+def _prepare_turkish_tts_text(text: str) -> str:
+    """
+    Improve Turkish number pronunciation:
+    - 1.191,38 TL -> bin yuz doksan bir lira otuz sekiz kurus
+    - long IDs (8+ digits) -> digit-by-digit readout
+    - other integers -> cardinal word
+    """
+    result = text
+
+    def money_repl(match: re.Match) -> str:
+        raw = match.group(1).replace(".", "").replace(" ", "")
+        whole, frac = (raw.split(",") + ["0"])[:2]
+        lira = int(whole) if whole.isdigit() else 0
+        kurus = int(frac[:2].ljust(2, "0")) if frac.isdigit() else 0
+        if kurus > 0:
+            return f"{_number_to_turkish(lira)} lira {_number_to_turkish(kurus)} kurus"
+        return f"{_number_to_turkish(lira)} lira"
+
+    # Currency first.
+    result = re.sub(r"(\d[\d\.\s]*(?:,\d{1,2})?)\s*TL\b", money_repl, result, flags=re.IGNORECASE)
+
+    def num_repl(match: re.Match) -> str:
+        s = match.group(0)
+        if len(s) >= 8:
+            return " ".join(TR_UNITS[int(ch)] for ch in s)
+        return _number_to_turkish(int(s))
+
+    # Then standalone integer numbers.
+    result = re.sub(r"\b\d+\b", num_repl, result)
+    return result
+
+
 def get_eleven_client():
     """Anahtari her seferinde guncel ayarlardan alarak client olusturur."""
     if settings.ELEVENLABS_API_KEY and "your_" not in settings.ELEVENLABS_API_KEY.lower():
@@ -35,6 +109,8 @@ async def generate_tts(text: str, lang: str = None, voice: str = "default") -> s
     clean_text = re.sub(r'<\|ACT:.*?\|>', '', text)
     clean_text = re.sub(r'<\|DELAY:.*?\|>', '', clean_text)
     clean_text = clean_text.strip()
+    if lang == "tr":
+        clean_text = _prepare_turkish_tts_text(clean_text)
     
     client = get_eleven_client()
     if not client:
