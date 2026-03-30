@@ -199,29 +199,10 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
         # Eğer kullanıcı bir tarih verdiyse o tarihe en yakın olanları,
         # vermemişse bugüne en yakın olanları sırala
         if target_dt:
-            # Kullanıcının istediği tarihe en yakın gelecek seferleri bul
-            # Önce o tarihten SONRAKI en yakınlar, sonra öncekiler
-            future_from_target = [(r, dt) for r, dt in others if dt > target_dt]
-            past_from_target = [(r, dt) for r, dt in others if dt <= target_dt and dt >= today]
-            
-            future_from_target.sort(key=lambda x: x[1])
-            past_from_target.sort(key=lambda x: x[1], reverse=True)
-            
-            # İlk önce yakın gelecek tarihleri, sonra yakın geçmiş tarihleri birleştir
-            sorted_others = []
-            fi, pi = 0, 0
-            while len(sorted_others) < len(future_from_target) + len(past_from_target):
-                f_diff = (future_from_target[fi][1] - target_dt).days if fi < len(future_from_target) else float('inf')
-                p_diff = (target_dt - past_from_target[pi][1]).days if pi < len(past_from_target) else float('inf')
-                
-                if f_diff <= p_diff:
-                    sorted_others.append(future_from_target[fi])
-                    fi += 1
-                else:
-                    sorted_others.append(past_from_target[pi])
-                    pi += 1
-            
-            msg = f"{travel_date} tarihinde {departure_city} -> {destination_city} seferi bulunamadı. En yakın tarihler:"
+            # Kullanıcının istediği tarihe en yakın GELECEK seferleri bul
+            # Sadece bugünden ve istenen tarihten sonraki/civarı seferleri al
+            sorted_others = sorted(others, key=lambda x: abs((x[1] - target_dt).days))
+            msg = f"{target_dt.strftime('%d.%m.%Y')} tarihinde {departure_city} -> {destination_city} seferi bulunamadı. En yakın tarihler:"
         else:
             # Bugünden itibaren en yakınlar
             sorted_others = sorted(others, key=lambda x: x[1])
@@ -236,7 +217,7 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
         for row, dt in sorted_others:
             date_str = dt.strftime("%d.%m.%Y")
             if date_str not in seen_dates:
-                result.append(f"- {date_str} tarihinde sefer mevcut (Sefer ID: {row['id']}, Fiyat: {row['price']} TL, Tip: {row['bus_type']})")
+                result.append(f"- {date_str} tarihinde sefer mevcut (Fiyat: {row['price']} TL, Tip: {row['bus_type']}, Sefer ID: {row['id']})")
                 seen_dates.add(date_str)
                 count += 1
             if count >= 3: break
