@@ -131,6 +131,33 @@ def _normalize_numeric_input(text: str) -> str:
     while i < len(tokens):
         tok = tokens[i]
         
+        # 0. Yüzler parçası (N yüz ...) - Örn: "beş yüz otuz yedi" -> 537
+        is_digit_or_unit = tok.isdigit() or tok in unit_map
+        if is_digit_or_unit and i + 1 < len(tokens) and tokens[i + 1] == "yuz":
+            val = int(tok) if tok.isdigit() else int(unit_map[tok])
+            hundreds = val * 100
+            i += 2
+            # Onluk kontrolü (örn: otuz)
+            if i < len(tokens) and tokens[i] in ten_map:
+                hundreds += ten_map[tokens[i]]
+                i += 1
+                # Birlik kontrolü (örn: yedi)
+                if i < len(tokens) and (tokens[i] in unit_map or (tokens[i].isdigit() and len(tokens[i]) == 1)):
+                    hundreds += int(unit_map.get(tokens[i], tokens[i]))
+                    i += 1
+            # Sadece birlik varsa (örn: beş yüz iki)
+            elif i < len(tokens) and (tokens[i] in unit_map or (tokens[i].isdigit() and len(tokens[i]) == 1)):
+                hundreds += int(unit_map.get(tokens[i], tokens[i]))
+                i += 1
+            parts.append(str(hundreds))
+            continue
+            
+        # 0.5 Tek başına yüz
+        if tok == "yuz":
+            parts.append("100")
+            i += 1
+            continue
+
         # 1. Saf rakam
         if tok.isdigit():
             parts.append(tok)
@@ -170,7 +197,7 @@ def _normalize_numeric_input(text: str) -> str:
             i += 1
             continue
         
-        # 5. Tanınmayan kelime - sayısal ifade değilse atla
+        # 5. Tanınmayan kelime
         i += 1
     
     # İkinci pas: STT parçalanma tamiri
@@ -375,7 +402,7 @@ def _detect_numeric_context(text: str) -> bool:
         "temmuz", "agustos", "eylul", "ekim", "kasim", "aralik",
         "bugun", "yarin", "haftaya", "gun", "ay", "yil",
         "pazartesi", "sali", "carsamba", "persembe", "cuma", "cumartesi", "pazar",
-        "bin", "yuz", "isim", "sehir", "bursa", "istanbul", "ankara", "gidis", "donus"
+        "bin", "isim", "sehir", "bursa", "istanbul", "ankara", "gidis", "donus"
     }
     
     for tok in tokens:

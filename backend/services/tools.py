@@ -117,6 +117,34 @@ def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
         i = 0
         while i < len(tokens):
             tok = tokens[i]
+            
+            # 0. Yüzler parçası (N yüz ...) - Örn: "beş yüz otuz yedi" -> 537
+            is_digit_or_unit = tok.isdigit() or tok in unit_map
+            if is_digit_or_unit and i + 1 < len(tokens) and tokens[i + 1] == "yuz":
+                val = int(tok) if tok.isdigit() else int(unit_map[tok])
+                hundreds = val * 100
+                i += 2
+                # Onluk kontrolü (örn: otuz)
+                if i < len(tokens) and tokens[i] in ten_map:
+                    hundreds += ten_map[tokens[i]]
+                    i += 1
+                    # Birlik kontrolü (örn: yedi)
+                    if i < len(tokens) and (tokens[i] in unit_map or (tokens[i].isdigit() and len(tokens[i]) == 1)):
+                        hundreds += int(unit_map.get(tokens[i], tokens[i]))
+                        i += 1
+                # Sadece birlik varsa (örn: beş yüz iki)
+                elif i < len(tokens) and (tokens[i] in unit_map or (tokens[i].isdigit() and len(tokens[i]) == 1)):
+                    hundreds += int(unit_map.get(tokens[i], tokens[i]))
+                    i += 1
+                parts.append(str(hundreds))
+                continue
+                
+            # 0.5 Tek başına yüz
+            if tok == "yuz":
+                parts.append("100")
+                i += 1
+                continue
+
             if tok.isdigit():
                 parts.append(tok)
                 i += 1
@@ -386,6 +414,34 @@ def _normalize_phone_input(text: str) -> str:
     i = 0
     while i < len(tokens):
         tok = tokens[i]
+        
+        # 0. Yüzler parçası (N yüz ...) - Örn: "beş yüz otuz yedi" -> 537
+        is_digit_or_unit = tok.isdigit() or tok in unit_map
+        if is_digit_or_unit and i + 1 < len(tokens) and tokens[i + 1] == "yuz":
+            val = int(tok) if tok.isdigit() else int(unit_map[tok])
+            hundreds = val * 100
+            i += 2
+            # Onluk kontrolü (örn: otuz)
+            if i < len(tokens) and tokens[i] in ten_map:
+                hundreds += ten_map[tokens[i]]
+                i += 1
+                # Birlik kontrolü (örn: yedi)
+                if i < len(tokens) and (tokens[i] in unit_map or (tokens[i].isdigit() and len(tokens[i]) == 1)):
+                    hundreds += int(unit_map.get(tokens[i], tokens[i]))
+                    i += 1
+            # Sadece birlik varsa (örn: beş yüz iki)
+            elif i < len(tokens) and (tokens[i] in unit_map or (tokens[i].isdigit() and len(tokens[i]) == 1)):
+                hundreds += int(unit_map.get(tokens[i], tokens[i]))
+                i += 1
+            parts.append(str(hundreds))
+            continue
+            
+        # 0.5 Tek başına yüz
+        if tok == "yuz":
+            parts.append("100")
+            i += 1
+            continue
+
         if tok.isdigit():
             parts.append(tok)
             i += 1
