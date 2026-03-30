@@ -87,6 +87,50 @@ def normalize_city(city_name: str) -> str:
         city_name = city_name.replace(search, replace)
     return city_name.lower().strip()
 
+
+def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
+    """
+    T.C. Kimlik numarasını algoritmik olarak doğrular.
+    Kurallar:
+    1. 11 haneli olmalı
+    2. Tamamı rakamlardan oluşmalı
+    3. İlk hane 0 olamaz
+    4. İlk 10 hanenin toplamının mod 10'u = 11. hane
+    5. (1,3,5,7,9. haneler toplamı × 7 - 2,4,6,8. haneler toplamı) mod 10 = 10. hane
+    6. (1-8. haneler toplamı) mod 10 = 9. hane değil — doğrusu aşağıda
+    
+    Returns: (is_valid, error_message)
+    """
+    # Boşlukları temizle
+    tc_no = tc_no.strip().replace(" ", "")
+    
+    if len(tc_no) != 11:
+        return False, f"T.C. Kimlik numarası 11 haneli olmalıdır. Girdiğiniz numara {len(tc_no)} haneli."
+    
+    if not tc_no.isdigit():
+        return False, "T.C. Kimlik numarası sadece rakamlardan oluşmalıdır."
+    
+    if tc_no[0] == '0':
+        return False, "T.C. Kimlik numarası 0 ile başlayamaz."
+    
+    digits = [int(d) for d in tc_no]
+    
+    # 10. hane kontrolü: (tek pozisyonlar toplamı × 7 - çift pozisyonlar toplamı) mod 10
+    odd_sum = sum(digits[i] for i in range(0, 9, 2))   # 1,3,5,7,9. haneler (index 0,2,4,6,8)
+    even_sum = sum(digits[i] for i in range(1, 8, 2))   # 2,4,6,8. haneler (index 1,3,5,7)
+    
+    tenth_digit = (odd_sum * 7 - even_sum) % 10
+    if digits[9] != tenth_digit:
+        return False, "Girdiğiniz T.C. Kimlik numarası geçerli değil. Lütfen kontrol edip tekrar giriniz."
+    
+    # 11. hane kontrolü: ilk 10 hanenin toplamı mod 10
+    eleventh_digit = sum(digits[:10]) % 10
+    if digits[10] != eleventh_digit:
+        return False, "Girdiğiniz T.C. Kimlik numarası geçerli değil. Lütfen kontrol edip tekrar giriniz."
+    
+    return True, "Geçerli"
+
+
 def get_bus_trips(departure_city: str, destination_city: str, travel_date: str = None) -> str:
     """Gets bus trips between departure_city and destination_city. 
     If travel_date is provided (YYYY-MM-DD), searches for that date. 
@@ -124,6 +168,7 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
 
         exact_matches = []
         others = []
+        today = datetime.now().date()
 
         for row in all_rows:
             # DB formatı: M/D/YYYY (Örn: 3/22/2026)
@@ -132,10 +177,13 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
             except:
                 continue
             
+            # Geçmiş seferleri atla
+            if row_dt < today:
+                continue
+            
             if target_dt and row_dt == target_dt:
                 exact_matches.append(row)
             else:
-                # Sadece gelecekteki seferleri veya bugüne yakın olanları tutalım
                 others.append((row, row_dt))
 
         # 1. Tam eşleşme varsa onları dön
@@ -143,35 +191,52 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
             result = [f"{travel_date} tarihinde {departure_city} -> {destination_city} için bulunan seferler:"]
             for row in exact_matches[:3]:
                 result.append(
-                    f"- Sefer ID: {row['id']}, Tarih: {row['travel_datetime']}, Tipi: {row['bus_type']}, Fiyat: {row['price']} Lira. (Koltuklar: {row['available_seats']})"
+                    f"- Sefer ID: {row['id']}, Tarih: {row['travel_datetime']}, Tipi: {row['bus_type']}, Fiyat: {row['price']} TL, Boş Koltuklar: {row['available_seats']}"
                 )
             return "\n".join(result)
 
-        # 2. Tam eşleşme yoksa veya tarih verilmemişse EN YAKIN 3 günü bul
-        today = datetime.now().date()
-        
-        # Sadece bugünden itibaren olan gelecek seferleri filtrele
-        future_others = [x for x in others if x[1] >= today]
-        
+        # 2. Tam eşleşme yoksa EN YAKIN gelecek tarihleri bul
+        # Eğer kullanıcı bir tarih verdiyse o tarihe en yakın olanları,
+        # vermemişse bugüne en yakın olanları sırala
         if target_dt:
-            # Belirlenen tarihe en yakın GELECEK seferler
-            future_others.sort(key=lambda x: abs((x[1] - target_dt).days))
-            msg = f"{travel_date} tarihinde sefer bulamadım ancak en yakın şu gelecek tarihlerde seferler var:"
+            # Kullanıcının istediği tarihe en yakın gelecek seferleri bul
+            # Önce o tarihten SONRAKI en yakınlar, sonra öncekiler
+            future_from_target = [(r, dt) for r, dt in others if dt > target_dt]
+            past_from_target = [(r, dt) for r, dt in others if dt <= target_dt and dt >= today]
+            
+            future_from_target.sort(key=lambda x: x[1])
+            past_from_target.sort(key=lambda x: x[1], reverse=True)
+            
+            # İlk önce yakın gelecek tarihleri, sonra yakın geçmiş tarihleri birleştir
+            sorted_others = []
+            fi, pi = 0, 0
+            while len(sorted_others) < len(future_from_target) + len(past_from_target):
+                f_diff = (future_from_target[fi][1] - target_dt).days if fi < len(future_from_target) else float('inf')
+                p_diff = (target_dt - past_from_target[pi][1]).days if pi < len(past_from_target) else float('inf')
+                
+                if f_diff <= p_diff:
+                    sorted_others.append(future_from_target[fi])
+                    fi += 1
+                else:
+                    sorted_others.append(past_from_target[pi])
+                    pi += 1
+            
+            msg = f"{travel_date} tarihinde {departure_city} -> {destination_city} seferi bulunamadı. En yakın tarihler:"
         else:
             # Bugünden itibaren en yakınlar
-            future_others.sort(key=lambda x: x[1])
-            msg = f"{departure_city} - {destination_city} güzergahı için en yakın sefer tarihleri şunlardır:"
+            sorted_others = sorted(others, key=lambda x: x[1])
+            msg = f"{departure_city} -> {destination_city} güzergahı için en yakın sefer tarihleri:"
 
-        if not future_others:
+        if not sorted_others:
             return f"Maalesef {departure_city} - {destination_city} güzergahında gelecek bir tarihe ait hiç sefer bulunamadı."
 
         result = [msg]
         seen_dates = set()
         count = 0
-        for row, dt in future_others:
-            date_str = row['travel_datetime']
+        for row, dt in sorted_others:
+            date_str = dt.strftime("%d.%m.%Y")
             if date_str not in seen_dates:
-                result.append(f"- {date_str} tarihinde Sefer ID {row['id']} ({row['price']} Lira)")
+                result.append(f"- {date_str} tarihinde sefer mevcut (Sefer ID: {row['id']}, Fiyat: {row['price']} TL, Tip: {row['bus_type']})")
                 seen_dates.add(date_str)
                 count += 1
             if count >= 3: break
@@ -182,8 +247,13 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
         return f"Veritabanı hatası: {str(e)}"
 
 def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: str, eposta: str, koltuk_no: str) -> str:
-    """Makes a bus ticket reservation. Updates the available seats and returns a PNR code upon success."""
+    """Makes a bus ticket reservation. Validates TC identity number, updates available seats, and returns a PNR code upon success."""
     try:
+        # TC Kimlik doğrulaması
+        is_valid, validation_msg = validate_tc_kimlik(tc_no)
+        if not is_valid:
+            return f"Rezervasyon yapılamadı: {validation_msg}"
+        
         # Seferler veritabanına bağlan
         conn_seferler = sqlite3.connect(DB_PATH)
         cursor_seferler = conn_seferler.cursor()
