@@ -19,6 +19,11 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 MODEL_NAME = "all-MiniLM-L6-v2"
 
 class SemanticCache:
+    model: Any
+    cache: List[Dict[str, Any]]
+    threshold: float
+    max_items: int
+    cache_file: str
     _instance = None
     
     def __new__(cls):
@@ -33,7 +38,7 @@ class SemanticCache:
             finally:
                 sys.stdout = _old_stdout
             # cache structure: List of dicts {vector: np.array, data: {text, audio, emotion, original_query}}
-            cls._instance.cache: List[Dict[str, Any]] = []
+            cls._instance.cache = []
             cls._instance.threshold = 0.90 # Similarity threshold (0.0 to 1.0)
             cls._instance.max_items = 500   # Cache max boyutu — RAM taşmasını önler
             

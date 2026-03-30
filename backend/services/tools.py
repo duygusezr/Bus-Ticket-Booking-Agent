@@ -140,7 +140,26 @@ def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
                 continue
             i += 1
 
-        return "".join(parts)
+        # STT'de sık görülen parçalanma: "60 1" -> "61", "70 4" -> "74"
+        merged: list[str] = []
+        i = 0
+        while i < len(parts):
+            cur = parts[i]
+            nxt = parts[i + 1] if i + 1 < len(parts) else None
+            if (
+                nxt is not None
+                and cur.isdigit()
+                and nxt.isdigit()
+                and int(cur) in {20, 30, 40, 50, 60, 70, 80, 90}
+                and len(nxt) == 1
+            ):
+                merged.append(str(int(cur) + int(nxt)))
+                i += 2
+                continue
+            merged.append(cur)
+            i += 1
+
+        return "".join(merged)
 
     def _tc_checksum_ok(candidate: str) -> bool:
         if len(candidate) != 11 or not candidate.isdigit() or candidate[0] == "0":
@@ -348,6 +367,95 @@ def validate_tc_number(tc_no: str) -> str:
         return f"T.C. Kimlik numarası ({normalized_tc}) doğrulandı. İşlemlere devam edebiliriz."
     else:
         return f"Hata: {msg}"
+
+
+def _normalize_phone_input(text: str) -> str:
+    """Telefon numarasını rakam, yazı ve karışık ifadelerden normalize eder."""
+    t = (text or "").lower()
+    t = t.replace("ı", "i").replace("ş", "s").replace("ğ", "g").replace("ü", "u").replace("ö", "o").replace("ç", "c")
+    t = re.sub(r"[^0-9a-zA-Z\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+
+    unit_map = {"sifir": 0, "bir": 1, "iki": 2, "uc": 3, "dort": 4, "bes": 5, "alti": 6, "yedi": 7, "sekiz": 8, "dokuz": 9}
+    ten_map = {"on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, "altmis": 60, "yetmis": 70, "seksen": 80, "doksan": 90}
+
+    parts = []
+    tokens = t.split(" ") if t else []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok.isdigit():
+            parts.append(tok)
+            i += 1
+            continue
+        if tok in ten_map:
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if nxt in unit_map:
+                parts.append(str(ten_map[tok] + unit_map[nxt]))
+                i += 2
+                continue
+            parts.append(str(ten_map[tok]))
+            i += 1
+            continue
+        if tok in unit_map:
+            parts.append(str(unit_map[tok]))
+            i += 1
+            continue
+        i += 1
+
+    # "60 1" -> "61" benzeri parçalanmaları toparla
+    merged_parts = []
+    i = 0
+    while i < len(parts):
+        cur = parts[i]
+        nxt = parts[i + 1] if i + 1 < len(parts) else None
+        if (
+            nxt is not None
+            and cur.isdigit()
+            and nxt.isdigit()
+            and int(cur) in {20, 30, 40, 50, 60, 70, 80, 90}
+            and len(nxt) == 1
+        ):
+            merged_parts.append(str(int(cur) + int(nxt)))
+            i += 2
+            continue
+        merged_parts.append(cur)
+        i += 1
+
+    parts = merged_parts
+    digits = "".join(parts)
+    if len(digits) == 10 and digits.startswith("5"):
+        digits = "0" + digits
+    return digits
+
+
+def validate_phone_number(phone: str) -> str:
+    """Türkiye telefon numarasını normalize eder ve doğrular."""
+    normalized = _normalize_phone_input(phone)
+    if not normalized.isdigit() or len(normalized) not in (10, 11):
+        return "Hata: Telefon numarasını tam doğrulayamadım. Lütfen başında 0 olacak şekilde rakam rakam paylaşır mısınız?"
+    if len(normalized) == 11 and not normalized.startswith("0"):
+        return "Hata: Telefon numarasını tam doğrulayamadım. Lütfen başında 0 olacak şekilde rakam rakam paylaşır mısınız?"
+    if len(normalized) == 11 and normalized[1] != "5":
+        return "Hata: Telefon numarasını tam doğrulayamadım. Lütfen başında 0 olacak şekilde rakam rakam paylaşır mısınız?"
+    if len(normalized) == 10 and normalized[0] != "5":
+        return "Hata: Telefon numarasını tam doğrulayamadım. Lütfen başında 0 olacak şekilde rakam rakam paylaşır mısınız?"
+    if len(normalized) == 10:
+        normalized = "0" + normalized
+
+    formatted = f"{normalized[0:4]} {normalized[4:7]} {normalized[7:9]} {normalized[9:11]}"
+    return f"Telefon numarası doğrulandı: {formatted}"
+
+
+def validate_email_address(email: str) -> str:
+    """E-posta adresini sesli biçimden normalize eder ve doğrular."""
+    t = (email or "").strip().lower()
+    t = re.sub(r"\bat\b", "@", t)
+    t = re.sub(r"\bnokta\b", ".", t)
+    t = re.sub(r"\s+", "", t)
+    if re.fullmatch(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", t):
+        return f"E-posta doğrulandı: {t}"
+    return "Hata: E-posta adresini doğrulayamadım. Lütfen örnekteki gibi tekrar yazar mısınız: adsoyad@gmail.com"
 
 def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: str, eposta: str, koltuk_no: str) -> str:
     """Makes a bus ticket reservation. Validates TC identity number, updates available seats, and returns a PNR code upon success."""
