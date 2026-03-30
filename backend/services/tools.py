@@ -450,9 +450,26 @@ def validate_phone_number(phone: str) -> str:
 def validate_email_address(email: str) -> str:
     """E-posta adresini sesli biçimden normalize eder ve doğrular."""
     t = (email or "").strip().lower()
-    t = re.sub(r"\bat\b", "@", t)
+    
+    # Sesli söylemlerde yaygın kalıplar
+    # "at" ve "et" -> @
+    t = re.sub(r"\b(at|et)\b", "@", t)
+    # "nokta" -> .
     t = re.sub(r"\bnokta\b", ".", t)
+    # "dot" -> .
+    t = re.sub(r"\bdot\b", ".", t)
+    # "gmail com" -> "gmail.com", "hotmail com" -> "hotmail.com"
+    t = re.sub(r"\b(gmail|hotmail|yahoo|outlook|icloud|yandex)\s+(com|net|org|tr)\b", r"\1.\2", t)
+    # "com tr" -> "com.tr"
+    t = re.sub(r"\bcom\s+tr\b", "com.tr", t)
+    # "alt çizgi" veya "alt tire" -> _
+    t = re.sub(r"\b(alt\s*cizgi|alt\s*tire|underscore)\b", "_", t)
+    # "tire" -> -
+    t = re.sub(r"\btire\b", "-", t)
+    
+    # Boşlukları kaldır
     t = re.sub(r"\s+", "", t)
+    
     if re.fullmatch(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", t):
         return f"E-posta doğrulandı: {t}"
     return "Hata: E-posta adresini doğrulayamadım. Lütfen örnekteki gibi tekrar yazar mısınız: adsoyad@gmail.com"

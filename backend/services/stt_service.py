@@ -60,6 +60,134 @@ def _normalize_stt_text(raw_text: str) -> str:
     return text
 
 
+def _normalize_numeric_input(text: str) -> str:
+    """
+    Sesli girişten gelen karışık rakam+yazı ifadelerini tek akışta rakamlara çevirir.
+    
+    Örnekler:
+      "37 50 6 yetmiş"            -> "37506070"  (yetmiş = 70 tek başına)
+      "37 50 6 yetmiş altmış 1 27 4" -> "37506070611274" 
+      "beş 37 yirmi yedi"         -> "53727"
+      "sıfır beş üç yedi"         -> "0537"
+      "altmış bir"                 -> "61"
+      "dört yüz elli"             -> "450" (yüz desteği)
+    """
+    if not text:
+        return ""
+    
+    t = text.lower().strip()
+    # Türkçe karakter normalizasyonu
+    t = t.replace("ı", "i").replace("ş", "s").replace("ğ", "g")
+    t = t.replace("ü", "u").replace("ö", "o").replace("ç", "c")
+    # Noktalama ve özel karakterleri temizle (@ ve . hariç - email için)
+    t = re.sub(r"[^0-9a-zA-Z@\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    
+    # E-posta benzeri yapı varsa dokunma
+    if "@" in t:
+        return text.strip()
+    
+    unit_map = {
+        "sifir": "0", "bir": "1", "iki": "2", "uc": "3", "dort": "4",
+        "bes": "5", "alti": "6", "yedi": "7", "sekiz": "8", "dokuz": "9"
+    }
+    ten_map = {
+        "on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50,
+        "altmis": 60, "yetmis": 70, "seksen": 80, "doksan": 90
+    }
+    # Bitişik compound'lar (STT bazen boşluksuz yazar)
+    compound_map = {
+        "onbir": "11", "oniki": "12", "onuc": "13", "ondort": "14", "onbes": "15",
+        "onalti": "16", "onyedi": "17", "onsekiz": "18", "ondokuz": "19",
+        "yirmibir": "21", "yirmiiki": "22", "yirmiuc": "23", "yirmidort": "24",
+        "yirmibes": "25", "yirmialti": "26", "yirmiyedi": "27", "yirmisekiz": "28",
+        "yirmidokuz": "29", "otuzbir": "31", "otuziki": "32", "otuzuc": "33",
+        "otuzdort": "34", "otuzbes": "35", "otuzalti": "36", "otuzyedi": "37",
+        "otuzsekiz": "38", "otuzdokuz": "39",
+        "kirkbir": "41", "kirkiki": "42", "kirkuc": "43", "kirkdort": "44",
+        "kirkbes": "45", "kirkalti": "46", "kirkyedi": "47", "kirksekiz": "48",
+        "kirkdokuz": "49", "ellibir": "51",
+    }
+    
+    tokens = t.split()
+    parts: list[str] = []
+    i = 0
+    
+    while i < len(tokens):
+        tok = tokens[i]
+        
+        # 1. Saf rakam
+        if tok.isdigit():
+            parts.append(tok)
+            i += 1
+            continue
+        
+        # 2. Bitişik compound ("onbir", "yirmialti" vb.)
+        if tok in compound_map:
+            parts.append(compound_map[tok])
+            i += 1
+            continue
+        
+        # 3. Onluk ("on", "yirmi", ..., "doksan")
+        if tok in ten_map:
+            ten_val = ten_map[tok]
+            # Sonraki token birlik mi?
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if nxt in unit_map and nxt != "sifir":
+                # "yetmiş iki" -> 72
+                parts.append(str(ten_val + int(unit_map[nxt])))
+                i += 2
+                continue
+            elif nxt.isdigit() and len(nxt) == 1 and int(nxt) > 0:
+                # "yetmiş 2" -> 72  (STT bazen sonraki rakamı sayı olarak yazar)
+                parts.append(str(ten_val + int(nxt)))
+                i += 2
+                continue
+            else:
+                # "yetmiş" tek başına -> 70
+                parts.append(str(ten_val))
+                i += 1
+                continue
+        
+        # 4. Birlik ("bir", "iki", ..., "dokuz", "sıfır")
+        if tok in unit_map:
+            parts.append(unit_map[tok])
+            i += 1
+            continue
+        
+        # 5. Tanınmayan kelime - sayısal ifade değilse atla
+        i += 1
+    
+    # İkinci pas: STT parçalanma tamiri
+    # "60 1" -> "61", "70 4" -> "74" gibi durumlarda birleştir
+    merged: list[str] = []
+    i = 0
+    while i < len(parts):
+        cur = parts[i]
+        nxt = parts[i + 1] if i + 1 < len(parts) else None
+        if (
+            nxt is not None
+            and cur.isdigit()
+            and nxt.isdigit()
+            and int(cur) in {10, 20, 30, 40, 50, 60, 70, 80, 90}
+            and len(nxt) == 1
+            and int(nxt) > 0
+        ):
+            merged.append(str(int(cur) + int(nxt)))
+            i += 2
+            continue
+        merged.append(cur)
+        i += 1
+    
+    result = "".join(merged)
+    
+    # Sonuçta hiç rakam yoksa orijinal metni dön
+    if not result or not any(c.isdigit() for c in result):
+        return text.strip()
+    
+    return result
+
+
 def _convert_turkish_number_words(text: str) -> str:
     """
     Convert common Turkish number words (1-50) into digits.
@@ -153,8 +281,9 @@ def _collapse_numeric_sequences(text: str) -> str:
             nxt is not None
             and cur.isdigit()
             and nxt.isdigit()
-            and int(cur) in {20, 30, 40, 50, 60, 70, 80, 90}
+            and int(cur) in {10, 20, 30, 40, 50, 60, 70, 80, 90}
             and len(nxt) == 1
+            and int(nxt) > 0
         ):
             merged_chunks.append(str(int(cur) + int(nxt)))  # 60 + 1 -> 61
             i += 2
@@ -169,6 +298,41 @@ def _collapse_numeric_sequences(text: str) -> str:
     if len(joined) in (10, 11):
         return joined
     return normalized
+
+
+def _detect_numeric_context(text: str) -> bool:
+    """
+    Metnin sayısal veri (TC, telefon vb.) içerip içermediğini tespit eder.
+    Sayı ağırlıklı metin = True, kelime ağırlıklı = False.
+    """
+    if not text:
+        return False
+    
+    t = text.lower().strip()
+    t_normalized = t.replace("ı", "i").replace("ş", "s").replace("ğ", "g")
+    t_normalized = t_normalized.replace("ü", "u").replace("ö", "o").replace("ç", "c")
+    
+    # Türkçe sayı kelimeleri
+    number_words = {
+        "sifir", "bir", "iki", "uc", "dort", "bes", "alti", "yedi", "sekiz", "dokuz",
+        "on", "yirmi", "otuz", "kirk", "elli", "altmis", "yetmis", "seksen", "doksan",
+        "onbir", "oniki", "onuc", "ondort", "onbes", "onalti", "onyedi", "onsekiz", "ondokuz"
+    }
+    
+    tokens = re.sub(r"[^a-z0-9\s]", " ", t_normalized).split()
+    if not tokens:
+        return False
+    
+    numeric_token_count = 0
+    for tok in tokens:
+        if tok.isdigit():
+            numeric_token_count += 1
+        elif tok in number_words:
+            numeric_token_count += 1
+    
+    # Tokenların %60+'ı sayısal ise bu bir numara girişidir
+    return numeric_token_count / len(tokens) >= 0.6
+
 
 async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settings.DEFAULT_LANG) -> dict:
     """Sadece ElevenLabs SDK (Scribe) kullanır."""
@@ -204,10 +368,27 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
         )
 
         raw_text = str(getattr(resp, "text", "") or getattr(resp, "transcript", "") or "")
+        print(f"DEBUG: Ham transkripsiyon: '{raw_text}'")
+        
+        # Adım 1: ASR gürültüsünü temizle
         clean_text = _normalize_stt_text(raw_text)
-        clean_text = _convert_turkish_number_words(clean_text)
-        clean_text = _collapse_numeric_sequences(clean_text)
-        print(f"DEBUG: Transkripsiyon başarılı: {raw_text[:50]}...")
+        print(f"DEBUG: ASR temizleme sonrası: '{clean_text}'")
+        
+        # Adım 2: Sayısal bağlam tespiti
+        is_numeric = _detect_numeric_context(clean_text)
+        print(f"DEBUG: Sayısal bağlam: {is_numeric}")
+        
+        if is_numeric:
+            # Sayısal veri ise (TC, telefon vb.) agresif normalize et
+            numeric_result = _normalize_numeric_input(clean_text)
+            print(f"DEBUG: Sayısal normalize: '{clean_text}' -> '{numeric_result}'")
+            clean_text = numeric_result
+        else:
+            # Kelime bazlı dönüşüm (koltuk seçimi, tarih vb. için)
+            clean_text = _convert_turkish_number_words(clean_text)
+            clean_text = _collapse_numeric_sequences(clean_text)
+        
+        print(f"DEBUG: Final STT çıktısı: '{clean_text}'")
         if clean_text != raw_text:
             print(f"DEBUG: STT normalize edildi: '{raw_text}' -> '{clean_text}'")
 

@@ -49,13 +49,16 @@ DOĞRULAMA ARAÇLARI
 - Rezervasyon için `make_reservation`
 
 TC KURALI
+- Kullanıcı T.C. kimlik numarasını sesli söyleyebilir. Gelen metin rakam veya Türkçe sayı kelimeleri karışık olabilir (ör. "37 50 6 yetmiş altmış 1 27 4").
+- Bu tür girdileri olduğu gibi `validate_tc_number` aracına gönder. Araç Türkçe sayı kelimelerini otomatik çözer.
 - `validate_tc_number` sonucu başarılıysa bir sonraki adıma geç.
 - Başarısızsa nazikçe tekrar iste:
-"Kimlik numarasını tam doğrulayamadım. Lütfen 11 haneyi mümkünse rakam rakam yazarak veya tek tek söyleyerek tekrar paylaşır mısınız?"
+"Kimlik numarasını doğrulayamadım. 11 haneli rakamları tekrar yazar mısınız?"
 
 TELEFON / E-POSTA KURALI
-- Telefonu `validate_phone_number` ile doğrula.
-- E-postayı `validate_email_address` ile doğrula.
+- Kullanıcı telefon numarasını sesli söyleyebilir. Gelen metin rakam ve Türkçe sayı kelimeleri karışık olabilir.
+- Bu tür girdileri olduğu gibi `validate_phone_number` aracına gönder. Araç Türkçe sayı kelimelerini otomatik çözer.
+- E-postayı `validate_email_address` ile doğrula. Sesli söylendiğinde "at" = "@" ve "nokta" = "." olarak algılanmalıdır.
 - Başarısızsa kısa format örneği verip tekrar iste.
 
 BAŞARILI TAMAMLAMA
