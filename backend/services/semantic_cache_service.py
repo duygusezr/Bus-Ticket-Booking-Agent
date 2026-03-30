@@ -105,19 +105,16 @@ class SemanticCache:
         best_match = None
         highest_score = -1.0
         
-        for item in self.cache:
-            # Cosine similarity
-            dot_product = np.dot(query_vector, item["vector"])
-            norm_q = np.linalg.norm(query_vector)
-            norm_i = np.linalg.norm(item["vector"])
-            score = dot_product / (norm_q * norm_i) if (norm_q * norm_i) > 0 else 0
-            
-            if score > highest_score:
-                highest_score = score
-                best_match = item["data"]
-        
         t1 = time.perf_counter()
         
+        # Sayısal ağırlıklı girdiler için bypass (TC, Koltuk, ID vb.)
+        digit_count = sum(c.isdigit() for c in query)
+        is_mostly_digits = digit_count > (len(query) / 2) if len(query) > 0 else False
+        
+        if is_mostly_digits:
+            print(f"[SEMANTIC CACHE] BYPASS: Input is mostly digits ({query})")
+            return None
+            
         if highest_score >= self.threshold:
             print(f"[SEMANTIC CACHE] HIT (score: {highest_score:.3f}, time: {t1-t0:.3f}s)")
             return best_match

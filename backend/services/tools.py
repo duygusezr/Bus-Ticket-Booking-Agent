@@ -190,17 +190,14 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
         # Eğer kullanıcı bir tarih verdiyse o tarihe en yakın olanları,
         # vermemişse bugüne en yakın olanları sırala
         if target_dt:
-            # Kullanıcının istediği tarihe en yakın GELECEK seferleri bul
-            # Sadece bugünden ve istenen tarihten sonraki/civarı seferleri al
             sorted_others = sorted(others, key=lambda x: abs((x[1] - target_dt).days))
-            msg = f"{target_dt.strftime('%d.%m.%Y')} tarihinde {departure_city} -> {destination_city} seferi bulunamadı. En yakın tarihler:"
+            msg = f"{target_dt.strftime('%d.%m.%Y')} tarihinde tam uyan bir sefer bulamadım ama en yakın şu tarihlerde yardımcı olabilirim:"
         else:
-            # Bugünden itibaren en yakınlar
             sorted_others = sorted(others, key=lambda x: x[1])
-            msg = f"{departure_city} -> {destination_city} güzergahı için en yakın sefer tarihleri:"
+            msg = f"{departure_city} - {destination_city} güzergahı için en yakın seferlerimiz şunlar:"
 
         if not sorted_others:
-            return f"Maalesef {departure_city} - {destination_city} güzergahında gelecek bir tarihe ait hiç sefer bulunamadı."
+            return f"Maalesef {departure_city} - {destination_city} güzergahında yakın zamanda bir seferimiz görünmüyor."
 
         result = [msg]
         seen_dates = set()
@@ -208,7 +205,8 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
         for row, dt in sorted_others:
             date_str = dt.strftime("%d.%m.%Y")
             if date_str not in seen_dates:
-                result.append(f"- {date_str} tarihinde sefer mevcut (Fiyat: {row['price']} TL, Tip: {row['bus_type']}, Sefer ID: {row['id']})")
+                # Sefer ID'yi parantez içinde sona koyuyoruz ki LLM onu bilsin ama kullanıcıya yansıtmasın
+                result.append(f"- {date_str} (Fiyat: {row['price']} TL, Tip: {row['bus_type']}, ID: {row['id']})")
                 seen_dates.add(date_str)
                 count += 1
             if count >= 3: break
@@ -217,6 +215,58 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
         
     except Exception as e:
         return f"Veritabanı hatası: {str(e)}"
+
+def validate_seat_selection(user_input: str, available_seats_str: str) -> str:
+    """
+    Extracts a seat number from user input and checks if it's available.
+    Supports both numeric and Turkish word-based inputs (e.g., '5', 'beş').
+    """
+    import re
+    
+    text = str(user_input).strip().lower()
+    
+    # Türkçe sayı -> Rakam dönüştürücü (Daha kapsamlı)
+    tr_to_num = {
+        "bir": 1, "iki": 2, "üç": 3, "uc": 3, "dört": 4, "dort": 4,
+        "beş": 5, "bes": 5, "altı": 6, "alti": 6, "yedi": 7,
+        "sekiz": 8, "dokuz": 9, "on": 10, "onbir": 11, "on bir": 11,
+        "oniki": 12, "on iki": 12, "onüç": 13, "on üç": 13
+    }
+    
+    extracted_seat = None
+    
+    # 1. Önce Türkçe yazıyla kontrol et
+    for word, num in tr_to_num.items():
+        if word in text:
+            extracted_seat = num
+            break
+    
+    # 2. Eğer yazı bulunamadıysa rakamla tam eşleşme dene
+    if extracted_seat is None:
+        match = re.search(r'\b(\d{1,2})\b', text)
+        if match:
+            extracted_seat = int(match.group(1))
+
+    if extracted_seat is None:
+        return "Hata: Mesajınızda geçerli bir koltuk numarası bulamadım. Lütfen 1-50 arası bir rakam belirtin."
+    
+    seat = extracted_seat
+    
+    # Mevcut koltukları listeye çevir
+    try:
+        if isinstance(available_seats_str, str):
+            valid_seats = [int(s.strip()) for s in available_seats_str.split(",") if s.strip().isdigit()]
+        else:
+            valid_seats = [int(s) for s in available_seats_str]
+    except:
+        return f"Hata: Koltuk listesi okunamadı. Lütfen şu listeden birini seçin: {available_seats_str}"
+
+    print(f"[SEAT_LOG] User: {user_input} -> Extracted: {seat}, Avail: {valid_seats}")
+
+    if seat in valid_seats:
+        return f"Koltuk {seat} uygun. Rezervasyon işlemine devam edebiliriz."
+    else:
+        return f"Hata: {seat} numaralı koltuk mevcut değil veya zaten dolu. Lütfen şunlardan birini seçin: {available_seats_str}"
 
 def validate_tc_number(tc_no: str) -> str:
     """Validates a Turkish Identity Number (T.C. Kimlik No) using the official checksum algorithm."""

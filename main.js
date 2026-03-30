@@ -848,7 +848,10 @@ micBtn.addEventListener('mousedown', async () => {
                 const res = await fetch('http://localhost:8001/api/stt', { method: 'POST', body: formData });
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.text) { chatInput.value = data.text; sendMessage(); }
+                    if (data.text && data.text.trim().length > 0) { 
+                        chatInput.value = data.text; 
+                        sendMessage(); 
+                    }
                     else subtitle.textContent = "Sesi anlayamadım.";
                 } else if (res.status === 429) {
                     subtitle.textContent = "Ses servisi yoğun, 2 saniye bekleyip tekrar dene.";
@@ -881,7 +884,12 @@ micBtn.addEventListener('mouseup', () => {
 // MESAJ GÖNDERME
 // ============================================================
 sendBtn.addEventListener('click', sendMessage);
-chatInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendMessage(); });
+chatInput.addEventListener('keypress', e => { 
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        sendMessage(); 
+    }
+});
 chatInput.addEventListener('input', () => { if (chatInput.value.trim().length > 0) stopAudio(); });
 
 const chatHistory = []; // Konuşma geçmişi (son 10 mesaj gönderilir)
@@ -908,7 +916,7 @@ async function sendMessage() {
     const payload = JSON.stringify({
         text: text,
         lang: currentLang,
-        history: chatHistory.slice(-10)
+        history: chatHistory.slice(0, -1).slice(-10) // SADECE önceki mesajları gönder (son mesaj hariç)
     });
 
     if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {
