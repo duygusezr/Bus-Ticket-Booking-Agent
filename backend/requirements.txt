@@ -10,7 +10,6 @@ watchfiles
 google-genai
 torch
 transformers
-groq
 langchain
 langchain-google-genai
 sentence-transformers

@@ -14,7 +14,7 @@ class TTSRequest(BaseModel):
 @router.post("/api/tts")
 async def tts_endpoint(request: TTSRequest):
     """
-    Verilen metni ücretsiz edge-tts (veya ElevenLabs) üzerinden sese dönüştürür 
+    Verilen metni ElevenLabs (veya ücretsiz edge-tts) üzerinden sese dönüştürür 
     ve base64 MP3 olarak string döner.
     """
     try:

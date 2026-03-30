@@ -7,17 +7,34 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 // Canvas, renderer, kamera ve ışıklar burada ayarlanır
 // ============================================================
 const canvas = document.getElementById('canvas');
+const canvasContainer = document.getElementById('canvas-container');
+
 const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 
 const scene = new THREE.Scene();
 
-// Kamera: z=1.3 uzaklık, y=1.15 yükseklik — karakterin yüzüne odaklanır
-// z'yi artırırsan karakter küçülür, azaltırsan büyür
-// y'yi artırırsan karakter aşağı kayar, azaltırsan yukarı
-const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 100);
+// Kamera ayarları
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
 camera.position.set(0, 1.15, 1.3);
+
+if (canvasContainer) {
+    const resizeObserver = new ResizeObserver(entries => {
+        for (let entry of entries) {
+            const { width, height } = entry.contentRect;
+            if (width > 0 && height > 0) {
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+                renderer.setSize(width, height);
+            }
+        }
+    });
+    resizeObserver.observe(canvasContainer);
+} else {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+}
 
 // Yönlü ışık (güneş gibi tek yönden gelen ışık)
 const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0);
@@ -118,11 +135,7 @@ function animate() {
 }
 animate();
 
-window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
+// window.addEventListener('resize', handleCanvasResize); // ResizeObserver handles this now
 
 // ============================================================
 // GÖZ KIRPMA
@@ -606,12 +619,33 @@ function initWebSocket() {
         if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
     };
 
+    let currentAiBubble = null;
+
     chatSocket.onmessage = async (event) => {
         const data = JSON.parse(event.data);
 
         if (data.type === 'text') {
             currentFullResponse += data.content;
-            subtitle.textContent = processActTokens(currentFullResponse);
+            const clean = currentFullResponse
+                .replace(/<\|ACT:.*?\|>/gs, '')
+                .replace(/<\|ACT:.*$/gs, '')
+                .trim();
+            if (clean) {
+                if (subtitle) subtitle.textContent = ""; // Clear loading status
+                if (!currentAiBubble) {
+                    currentAiBubble = document.createElement('div');
+                    currentAiBubble.className = 'history-item ai';
+                    currentAiBubble.innerHTML = `
+                        <div class="bubble">
+                            <img src="./ela_avatar.png" alt="bot" class="avatar-icon">
+                            <div class="content"></div>
+                        </div>
+                    `;
+                    historyList.appendChild(currentAiBubble);
+                }
+                currentAiBubble.querySelector('.content').textContent = clean;
+                historyList.scrollTop = historyList.scrollHeight;
+            }
         }
         else if (data.type === 'audio') {
             await playBase64Audio(data.content);
@@ -621,11 +655,15 @@ function initWebSocket() {
         }
         else if (data.type === 'done') {
             chatHistory.push({ role: 'assistant', content: currentFullResponse });
-            addToHistoryPanel('ai', currentFullResponse);
+            if (!currentAiBubble && currentFullResponse.trim() !== '') {
+                addToHistoryPanel('ai', currentFullResponse);
+            }
+            currentAiBubble = null;
             currentFullResponse = "";
         }
         else if (data.type === 'error') {
-            subtitle.textContent = "Hata: " + data.content;
+            if (subtitle) subtitle.textContent = "Hata: " + data.content;
+            addToHistoryPanel('ai', "Hata: " + data.content);
             setEmotion('sad');
         }
     };
@@ -728,25 +766,41 @@ function addToHistoryPanel(role, text) {
     // Temiz metin (ACT tokenlarından arındırılmış)
     const displayRes = processActTokens(text);
 
-    item.innerHTML = `
-        <div class="role">${role === 'user' ? 'SEN' : 'Ela'}</div>
-        <div class="content">${displayRes}</div>
-    `;
+    if (role === 'user') {
+        item.innerHTML = `
+            <div class="content">${displayRes}</div>
+        `;
+    } else {
+        item.innerHTML = `
+            <div class="bubble">
+                <img src="./ela_avatar.png" alt="bot" class="avatar-icon">
+                <div class="content">${displayRes}</div>
+            </div>
+        `;
+    }
 
-    historyList.prepend(item); // En yeni mesaj en üstte
+    historyList.appendChild(item); // Mesajları alttan ekle
+    historyList.scrollTop = historyList.scrollHeight;
 }
 
 let currentLang = 'tr';
 const translations = {
-    tr: { placeholder: "Bir mesaj yazın...", welcome: "Merhaba! Ben Ela. Benimle konuşmaya başlayabilirsin.", thinking: "Düşünüyor..." },
-    en: { placeholder: "Type a message...", welcome: "Hello! I'm Ela. You can start talking to me.", thinking: "Thinking..." }
+    tr: { subtitle: "Otobüs bileti Randevu AI Asistanı", placeholder: "Bir mesaj yazın...", welcome: "Merhaba, ben Ela. Size en uygun otobüs biletini bulmam için nereden nereye ve hangi tarihte seyahat edeceğinizi söyler misiniz?", thinking: "Düşünüyor..." },
+    en: { subtitle: "Bus Ticket Booking AI Assistant", placeholder: "Type a message...", welcome: "Hello, I'm Ela. Could you tell me where you are traveling from, your destination, and your travel dates so I can find the best bus ticket for you?", thinking: "Thinking..." }
 };
 
 function setLanguage(lang) {
     currentLang = lang;
     chatInput.placeholder = translations[lang].placeholder;
-    if (subtitle.textContent === translations[lang === 'tr' ? 'en' : 'tr'].welcome)
-        subtitle.textContent = translations[lang].welcome;
+    
+    // Alt başlık çevirisi
+    const aiSubtitle = document.getElementById('ai-subtitle');
+    if (aiSubtitle) aiSubtitle.textContent = translations[lang].subtitle;
+
+    const welcomeMsg = document.getElementById('welcome-msg');
+    if (welcomeMsg && (welcomeMsg.textContent === translations.tr.welcome || welcomeMsg.textContent === translations.en.welcome)) {
+        welcomeMsg.textContent = translations[lang].welcome;
+    }
     langTrBtn.classList.toggle('active', lang === 'tr');
     langEnBtn.classList.toggle('active', lang === 'en');
 }

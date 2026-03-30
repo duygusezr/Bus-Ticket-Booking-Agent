@@ -1,4 +1,4 @@
-/* Temel Sıfırlama ve Atmosferik Arka Plan */
+/* Temel Sıfırlama ve Etrafı Kaplayan Arka Plan */
 body,
 html {
     margin: 0;
@@ -6,19 +6,22 @@ html {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background-color: #0d0b14;
-    /* Resim yüklenene kadar veya kenarlarda görünecek baz renk */
+    background-color: #f7f3f9;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    color: #fff;
+    color: #333;
 }
 
 #app {
     position: relative;
     width: 100%;
     height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2% 5%;
+    box-sizing: border-box;
 }
 
-/* Arka Plan Resmi ve Blur Efekti */
 #app::before {
     content: "";
     position: absolute;
@@ -27,385 +30,323 @@ html {
     right: -20px;
     bottom: -20px;
     background-image: url('./house_bg.jpg');
-    /* Mevcut resim */
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
-    filter: blur(2px);
-    /* Bulanıklık miktarı (isteğe göre değiştirilebilir) */
+    filter: blur(8px);
     z-index: 0;
-}
-
-/* 3D Canvas - Karakter Arkası */
-#canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 1;
-    /* UI'ın arkasında */
-}
-
-/* UI Katmanı */
-.ui-layer {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 2;
-    /* Canvas'ın önünde */
-    pointer-events: none;
-    /* Tıklamaların canvasa geçmesini sağlar */
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-}
-
-/* Etkileşimli UI elementleri için pointer-events açılır */
-.header,
-.subtitle-container,
-.bottom-bar {
-    pointer-events: auto;
-}
-
-/* Üst Kısım (FPS ve Başlık) */
-.header {
-    position: relative;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px;
-    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent);
-}
-
-.title {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    margin: 0;
-    font-size: 1.5rem;
-    letter-spacing: 2px;
-    text-shadow: 0 0 15px rgba(255, 192, 203, 0.4);
-}
-
-.header-left {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.icon-btn {
-    background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: white;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    backdrop-filter: blur(5px);
-    transition: all 0.2s;
-}
-
-.icon-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-/* Sidebar Genel */
-.sidebar {
-    position: absolute;
-    top: 0;
-    width: 300px;
-    height: 100%;
-    background: rgba(13, 11, 20, 0.85);
-    backdrop-filter: blur(15px);
-    z-index: 100;
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
-}
-
-.sidebar.left {
-    left: -320px;
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.sidebar.left.open {
-    left: 0;
-}
-
-.sidebar.right {
-    right: -320px;
-    border-left: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.sidebar.right.open {
-    right: 0;
-}
-
-.sidebar-header {
-    padding: 30px 20px 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.sidebar-header h2 {
-    margin: 0;
-    font-size: 1.1rem;
-    color: #ffc0cb;
-}
-
-/* Duygu Grafiği Alanı */
-.emotion-container {
-    padding: 20px;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.emotion-stats {
-    padding: 20px;
-    text-align: center;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-#current-emotion-badge {
-    display: inline-block;
-    padding: 8px 20px;
-    background: rgba(255, 192, 203, 0.15);
-    border: 1px solid rgba(255, 192, 203, 0.3);
-    border-radius: 20px;
-    color: #ffc0cb;
-    font-weight: bold;
-    text-transform: uppercase;
-    font-size: 0.8rem;
-    letter-spacing: 1px;
-}
-
-.history-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.history-item {
-    padding: 12px 15px;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
-    font-size: 14px;
-    border: 1px solid transparent;
-    transition: all 0.2s;
-    cursor: default;
-    line-height: 1.4;
-}
-
-.history-item:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 192, 203, 0.2);
-}
-
-.history-item.user {
-    border-left: 3px solid #ffc0cb;
-}
-
-.history-item.ai {
-    border-left: 3px solid #64b5f6;
-    /* AI için mavi tonu */
-    background: rgba(100, 181, 246, 0.05);
-}
-
-.history-item .role {
-    font-size: 10px;
-    text-transform: uppercase;
-    font-weight: 800;
-    margin-bottom: 5px;
     opacity: 0.6;
 }
 
-.history-list::-webkit-scrollbar {
-    width: 5px;
-}
-
-.history-list::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.history-list::-webkit-scrollbar-thumb {
-    background: rgba(255, 192, 203, 0.2);
-    border-radius: 10px;
-}
-
-.history-list::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 192, 203, 0.4);
-}
-
-#fps-counter {
-    background: rgba(0, 0, 0, 0.4);
-    padding: 6px 12px;
-    border-radius: 10px;
-    font-family: monospace;
-    font-size: 14px;
-    backdrop-filter: blur(5px);
-    width: max-content;
-}
-
-.lang-switcher {
+/* Ana Bölüm Çerçevesi (Beyaz kutu ve tasarım) */
+.main-layout {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    max-width: 1400px;
+    height: 100%;
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2), 0 0 0 2px rgba(181, 153, 226, 0.4);
     display: flex;
-    gap: 5px;
+    overflow: hidden;
 }
 
-.lang-btn {
-    width: 35px;
-    height: 35px;
-    font-size: 12px;
-    border-radius: 8px;
-    font-weight: bold;
+/* --- SOL PANEL: SOHBET ARAYÜZÜ --- */
+.chat-panel {
+    flex: 6.5;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
 }
 
-.lang-btn.active {
-    background: rgba(255, 192, 203, 0.6);
-    border-color: rgba(255, 192, 203, 0.8);
-    box-shadow: 0 0 10px rgba(255, 192, 203, 0.3);
+/* Üst Kısım */
+.chat-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: 15px 30px;
+    border-bottom: 1px solid #f0f0f0;
 }
 
-.spacer {
+.header-left {
     display: none;
 }
 
-/* Alt Yazı Alanı */
-.subtitle-container {
-    text-align: center;
-    margin-top: auto;
-    margin-bottom: 30px;
-    /* Karakterin yüzünü kapatmaması için ekranın altına çekildi */
-}
-
-#subtitle {
-    display: inline-block;
-    background: rgba(0, 0, 0, 0.6);
-    padding: 15px 30px;
-    border-radius: 20px;
-    font-size: 18px;
-    backdrop-filter: blur(5px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    max-width: 80%;
-    word-wrap: break-word;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-}
-
-/* Alt Bar (Kontroller) */
-.bottom-bar {
-    display: flex;
-    gap: 10px;
-    padding: 20px;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
-    align-items: center;
-    justify-content: center;
-}
-
-button {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: white;
-    width: 50px;
-    height: 50px;
-    border-radius: 25px;
-    font-size: 20px;
+.lang-switcher button {
+    background: transparent;
+    border: none;
+    font-weight: 600;
+    color: #888;
     cursor: pointer;
-    transition: all 0.2s ease;
-    backdrop-filter: blur(5px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
+    font-size: 14px;
+    margin-left: 10px;
 }
 
-button:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: scale(1.05);
+.lang-switcher button.active {
+    color: #1a73e8;
 }
 
-button:active {
-    transform: scale(0.95);
-}
-
-#mic-btn.recording {
-    background: rgba(255, 68, 68, 0.6);
-    border-color: #ff4444;
-    animation: pulse 1.5s infinite;
-}
-
-.input-wrapper {
+/* Sohbet Geçmiş Alanı */
+.chat-history-area {
     flex: 1;
-    max-width: 600px;
-    position: relative;
+    overflow-y: auto;
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.chat-history-area::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-history-area::-webkit-scrollbar-thumb {
+    background: #e0e0e0;
+    border-radius: 10px;
+}
+
+/* Mesaj Kutucukları */
+.history-item {
+    display: flex;
+    flex-direction: column;
+    max-width: 85%;
+    font-size: 17px;
+    line-height: 1.6;
+}
+
+.history-item.ai {
+    align-self: flex-start;
+}
+
+.history-item.ai .bubble {
+    display: flex;
+    gap: 15px;
+    align-items: flex-start;
+}
+
+.history-item.ai .avatar-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-top: 2px;
+}
+
+.history-item.ai .content {
+    background: transparent;
+    color: #333;
+    padding: 5px 0;
+}
+
+.history-item.ai .role {
+    display: none;
+}
+
+.history-item.user {
+    align-self: flex-end;
+    background-color: #e5e5ea;
+    color: #333;
+    padding: 12px 18px;
+    border-radius: 20px;
+    border-bottom-right-radius: 5px;
+}
+
+.history-item.user .role {
+    display: none;
+}
+
+/* Alt Bar (Mesaj Girdisi) */
+.chat-input-area {
+    padding: 20px 30px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.input-container {
+    width: 100%;
     display: flex;
     align-items: center;
+    background: #f1f3f5;
+    border-radius: 30px;
+    padding: 5px 10px 5px 20px;
 }
 
 #chat-input {
-    width: 100%;
-    height: 50px;
-    border-radius: 25px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(0, 0, 0, 0.4);
-    color: white;
-    padding: 0 20px;
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 15px 0;
     font-size: 16px;
-    backdrop-filter: blur(5px);
     outline: none;
-    transition: all 0.3s ease;
-    box-sizing: border-box;
-}
-
-#chat-input:focus {
-    border-color: rgba(255, 192, 203, 0.6);
-    /* Arkaplanla (pembe) daha uyumlu */
-    box-shadow: 0 0 10px rgba(255, 192, 203, 0.2);
-    background: rgba(0, 0, 0, 0.6);
+    color: #333;
 }
 
 #chat-input::placeholder {
-    color: rgba(255, 255, 255, 0.5);
+    color: #999;
 }
 
-#send-btn {
-    background: rgba(255, 192, 203, 0.2);
-    border-color: rgba(255, 192, 203, 0.4);
+.input-container button {
+    background: #1976d2;
+    border: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    margin-left: 8px;
+    transition: all 0.2s;
 }
 
-#send-btn:hover {
-    background: rgba(255, 192, 203, 0.4);
+.input-container button:hover {
+    background: #115293;
+    transform: scale(1.05);
 }
 
-/* Kayıt sırasındaki vuruntu efekti */
+.mic-btn.recording {
+    background: #d32f2f !important;
+    animation: pulse 1s infinite;
+}
+
+.powered-by {
+    font-size: 11px;
+    color: #888;
+    margin-top: 15px;
+}
+
+.powered-by b {
+    color: #333;
+}
+
 @keyframes pulse {
     0% {
-        box-shadow: 0 0 0 0 rgba(255, 68, 68, 0.4);
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.4);
     }
 
     70% {
-        box-shadow: 0 0 0 15px rgba(255, 68, 68, 0);
+        transform: scale(1.05);
+        box-shadow: 0 0 0 10px rgba(211, 47, 47, 0);
     }
 
     100% {
-        box-shadow: 0 0 0 0 rgba(255, 68, 68, 0);
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(211, 47, 47, 0);
     }
+}
+
+/* --- SAĞ PANEL: AVATAR --- */
+.avatar-panel {
+    flex: 3.5;
+    position: relative;
+    /* Sağ panelin arka planı orijinal manzarası olacak */
+    background-image: url('./house_bg.jpg');
+    background-size: cover;
+    background-position: center;
+    border-left: 1px solid #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+}
+
+.avatar-header-text {
+    position: absolute;
+    top: 50px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 10;
+    color: white;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.avatar-header-text h3 {
+    margin: 0;
+    font-size: 34px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    line-height: 1;
+    /* Satır yüksekliğini sabitle */
+}
+
+/* AI Rozeti - Daha şık ve hizalı hale getirildi */
+.avatar-header-text h3 b {
+    background: rgba(255, 255, 255, 0.2);
+    /* Cam efekti */
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 900;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    margin-top: -2px;
+    /* Manuel ince ayar (baseline'a oturtmak için) */
+}
+
+.avatar-header-text p {
+    margin: 12px 0 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.3);
+    /* Daha soft bir siyah */
+    display: inline-block;
+    padding: 6px 20px;
+    border-radius: 50px;
+    /* Daha oval pill görünümü */
+    backdrop-filter: blur(8px);
+    /* Glassmorphism efekti */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.menu-icon {
+    position: absolute;
+    top: 25px;
+    right: 25px;
+    background: rgba(0, 0, 0, 0.3);
+    border: none;
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    font-size: 20px;
+    cursor: pointer;
+    z-index: 10;
+    backdrop-filter: blur(5px);
+    transition: background 0.2s;
+}
+
+.menu-icon:hover {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.canvas-container {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 5;
+}
+
+canvas#canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
 }

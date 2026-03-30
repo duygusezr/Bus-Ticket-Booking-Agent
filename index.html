@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AvatarAI Chatbot Arayüzü</title>
-    <link rel="stylesheet" href="./style.css">
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./style.css?v=4">
     <!-- FontAwesome İkonları için CDN -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
         integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
@@ -27,70 +28,73 @@
 
 <body>
     <div id="app">
-        <!-- 3D Render Alanı -->
-        <canvas id="canvas"></canvas>
-
-        <!-- Sol Sidebar (Sohbet Geçmişi) -->
-        <div id="history-sidebar" class="sidebar left">
-            <div class="sidebar-header">
-                <h2><i class="fa-solid fa-clock-rotate-left"></i> Geçmiş</h2>
-                <button id="close-sidebar" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div id="history-list" class="history-list">
-                <!-- Geçmiş mesajlar buraya gelecek -->
-            </div>
-        </div>
-
-        <!-- Sağ Sidebar (Duygu Analizi) -->
-        <div id="emotion-sidebar" class="sidebar right">
-            <div class="sidebar-header">
-                <h2><i class="fa-solid fa-heart-pulse"></i> Duygu Grafiği</h2>
-                <button id="close-emotion-sidebar" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="emotion-container">
-                <canvas id="emotionChart"></canvas>
-            </div>
-            <div class="emotion-stats">
-                <div id="current-emotion-badge">Nötr</div>
-            </div>
-        </div>
-
-        <!-- UI Katmanı -->
-        <div class="ui-layer">
-            <div class="header">
-                <div class="header-left">
-                    <button id="toggle-sidebar" class="icon-btn" title="Geçmişi Göster"><i
-                            class="fa-solid fa-bars"></i></button>
-                    <div id="fps-counter"><i class="fa-solid fa-gauge"></i> FPS: 0</div>
-                </div>
-                <h1 class="title">AvatarAI</h1>
-                <div class="header-right">
-                    <div class="lang-switcher">
-                        <button id="lang-tr" class="lang-btn active" title="Türkçe">TR</button>
-                        <button id="lang-en" class="lang-btn" title="English">EN</button>
+        <div class="main-layout">
+            <!-- Sol Panel: Sohbet Arayüzü -->
+            <div class="chat-panel">
+                <div class="chat-header">
+                    <div class="header-left">
+                        <div id="fps-counter" style="display:none;"><i class="fa-solid fa-gauge"></i> FPS: 0</div>
                     </div>
-                    <button id="toggle-emotion-sidebar" class="icon-btn" title="Duygu Analizi"><i
-                            class="fa-solid fa-chart-line"></i></button>
+                    <div class="header-right">
+                        <div class="lang-switcher">
+                            <button id="lang-tr" class="lang-btn active" title="Türkçe">TR</button>
+                            <button id="lang-en" class="lang-btn" title="English">EN</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="history-list" class="chat-history-area">
+                    <!-- Geçmiş mesajlar buraya gelecek -->
+                    <div class="history-item ai">
+                        <div class="bubble">
+                            <img src="./ela_avatar.png" alt="bot" class="avatar-icon">
+                            <div class="content" id="welcome-msg">Merhaba, ben Ela. Size en uygun otobüs biletini bulmam için nereden nereye ve hangi tarihte seyahat edeceğinizi söyler misiniz?</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input-area">
+                    <div id="subtitle" style="font-size: 12px; color: #888; text-align: center; height: 16px; margin-bottom: 5px;"></div>
+                    <div class="input-container">
+                        <input type="text" id="chat-input" placeholder="Bir mesaj yazın..." />
+                        <button id="mic-btn" class="mic-btn" title="Basılı tutarak konuş"><i class="fa-solid fa-microphone"></i></button>
+                        <button id="send-btn" class="send-btn" title="Gönder"><i class="fa-solid fa-paper-plane"></i></button>
+                    </div>
+                    <div class="powered-by">Powered by <b>AvatarAI</b></div>
                 </div>
             </div>
 
-            <div class="subtitle-container">
-                <p id="subtitle">Merhaba! Ben Ela. Benimle konuşmaya başlayabilirsin.</p>
+            <!-- Sağ Panel: Avatar -->
+            <div class="avatar-panel">
+                <div class="avatar-header-text">
+                    <h3>Ela <b>AI</b></h3>
+                    <p id="ai-subtitle">Otobüs bileti Randevu AI Asistanı</p>
+                </div>
+                <button class="menu-icon" title="Menu"><i class="fa-solid fa-bars"></i></button>
+                
+                <!-- 3D Render Alanı -->
+                <div class="canvas-container" id="canvas-container">
+                    <canvas id="canvas"></canvas>
+                </div>
             </div>
 
-            <div class="bottom-bar">
-                <button id="mic-btn" title="Basılı tutarak konuş"><i class="fa-solid fa-microphone"></i></button>
-                <button id="audio-btn" title="Sesi Aç/Kapat"><i class="fa-solid fa-volume-high"></i></button>
-                <div class="input-wrapper">
-                    <input type="text" id="chat-input" placeholder="Bir mesaj yazın..." />
-                </div>
-                <button id="send-btn" title="Gönder"><i class="fa-solid fa-paper-plane"></i></button>
+            <!-- Gizli UI Elementleri -->
+            <div style="display:none;">
+                <button id="toggle-sidebar"></button>
+                <button id="close-sidebar"></button>
+                <div id="history-sidebar"></div>
+                <div id="emotion-sidebar"></div>
+                <button id="toggle-emotion-sidebar"></button>
+                <button id="close-emotion-sidebar"></button>
+                <canvas id="emotionChart"></canvas>
+                <div id="current-emotion-badge"></div>
+                <button id="audio-btn"><i class="fa-solid fa-volume-high"></i></button>
             </div>
         </div>
     </div>
 
     <!-- Ana JavaScript -->
-    <script type="module" src="./main.js"></script>
+    <script type="module" src="./main.js?v=3"></script>
 </body>
 
 </html>

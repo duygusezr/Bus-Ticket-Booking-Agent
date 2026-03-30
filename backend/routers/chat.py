@@ -35,8 +35,17 @@ async def chat_endpoint(request: ChatRequest):
                 "emotion": cached_match["emotion"]
             }
 
-        response_text = await generate_chat_response(request.text, request.history, request.lang)
+        # ADIM 1: Gemini Logic
+        from services.llm_service import generate_chat_response
+        logic_result = await generate_chat_response(request.text, request.history, request.lang)
         t_llm = time.perf_counter()
+
+        # ADIM 2: GPT UX
+        from services.openai_service import generate_gpt_response_stream
+        response_text = ""
+        async for chunk in generate_gpt_response_stream(request.text, request.history, context_data=logic_result):
+            response_text += chunk
+        t_gpt = time.perf_counter()
 
         audio_base64 = await generate_tts(response_text, request.lang)
         t_tts = time.perf_counter()
@@ -46,7 +55,7 @@ async def chat_endpoint(request: ChatRequest):
 
         semantic_cache.add(request.text, response_text, audio_base64, emotion)
 
-        print(f"--- [REST CHAT LATENCY] --- LLM: {t_llm-t_start:.3f}s | TTS: {t_tts-t_llm:.3f}s | EMO: {t_emo-t_tts:.3f}s | TOTAL: {t_emo-t_start:.3f}s")
+        print(f"--- [REST HYBRID LATENCY] --- LOGIC: {t_llm-t_start:.3f}s | UX: {t_gpt-t_llm:.3f}s | TTS: {t_tts-t_gpt:.3f}s | TOTAL: {t_emo-t_start:.3f}s")
         return {"text": response_text, "audio": audio_base64, "emotion": emotion}
 
     except Exception as e:
@@ -88,15 +97,30 @@ async def websocket_chat(websocket: WebSocket):
             print(f"[WS] User Emotion Latency: {time.perf_counter() - t_ws_start:.3f}s")
             await websocket.send_json({"type": "emotion", "content": user_msg_emotion})
 
-            full_response = ""
-
             try:
-                t_llm_start = time.perf_counter()
-                async for chunk in generate_chat_response_stream(text, history, lang):
+                # --- HİBRİT MİMARİ ADIMLARI ---
+                t_logic_start = time.perf_counter()
+                
+                # ADIM 1: Gemini Flash (Logic Layer) - Karar Verir & Tool Çalıştırır
+                # Gemini'yi sessizce çağırıyoruz (streaming değil, sadece karar ve veri için)
+                from services.llm_service import generate_chat_response
+                logic_result = await generate_chat_response(text, history, lang)
+                t_logic_end = time.perf_counter()
+                print(f"[WS] Gemini Logic (Tool Calling) Latency: {t_logic_end - t_logic_start:.3f}s")
+
+                # ADIM 2: GPT (UX Layer) - Doğal Konuşma + UX
+                # Gemini'den gelen ham veriyi veya sonucu GPT'ye paslıyoruz
+                from services.openai_service import generate_gpt_response_stream
+                
+                full_response = ""
+                t_gpt_start = time.perf_counter()
+                
+                async for chunk in generate_gpt_response_stream(text, history, context_data=logic_result):
                     full_response += chunk
                     await websocket.send_json({"type": "text", "content": chunk})
-                t_llm_end = time.perf_counter()
-                print(f"[WS] LLM Stream Latency: {t_llm_end - t_llm_start:.3f}s")
+                
+                t_gpt_end = time.perf_counter()
+                print(f"[WS] GPT UX Response Latency: {t_gpt_end - t_gpt_start:.3f}s")
 
                 # Tüm yanıt bitti, sese dönüştür
                 t_tts_start = time.perf_counter()

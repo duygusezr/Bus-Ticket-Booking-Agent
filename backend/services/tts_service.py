@@ -1,9 +1,9 @@
 import base64
-import tempfile
 import os
-import edge_tts
+import re
 from elevenlabs.client import ElevenLabs
 from config import settings
+import edge_tts
 
 def get_eleven_client():
     """Anahtari her seferinde guncel ayarlardan alarak client olusturur."""
@@ -11,74 +11,63 @@ def get_eleven_client():
         return ElevenLabs(api_key=settings.ELEVENLABS_API_KEY)
     return None
 
-async def generate_tts(text: str, lang: str = None, voice: str = "default") -> str:
+async def generate_tts_edge(text: str, lang: str) -> str:
+    voice = "tr-TR-EmelNeural" if lang == "tr" else "en-US-AriaNeural"
+    communicate = edge_tts.Communicate(text, voice)
+    audio_data = bytearray()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data.extend(chunk["data"])
+    if not audio_data:
+        raise Exception("Edge-TTS boş ses verisi döndürdü.")
+    return base64.b64encode(audio_data).decode("utf-8")
+
+async def generate_tts(text: str, lang: str = None, voice: str = "default") -> str:  # noqa
     """
     Gelen metni sese dönüştürür.
-    Birincil: ElevenLabs (SDK ile)
-    Yedek: Microsoft Edge TTS (Ücretsiz)
+    Önce ElevenLabs dener, hata alırsa edge-tts'e düşer.
     """
     if not text or not text.strip():
         return ""
 
+    lang = lang or settings.DEFAULT_LANG
+    # ACT ve DELAY tokenlarını temizle (seslendirme için)
+    clean_text = re.sub(r'<\|ACT:.*?\|>', '', text)
+    clean_text = re.sub(r'<\|DELAY:.*?\|>', '', clean_text)
+    clean_text = clean_text.strip()
+    
+    client = get_eleven_client()
+    if not client:
+        print("[TTS] ElevenLabs anahtarı yok, Edge-TTS kullanılıyor.")
+        return await generate_tts_edge(clean_text, lang)
+
+    voice_id = settings.ELEVENLABS_VOICE_ID or "EXAVITQu4vr4xnSDxMaL"
+    
     try:
-        lang = lang or settings.DEFAULT_LANG
-        import re
-        # ACT ve DELAY tokenlarını temizle (seslendirme için)
-        clean_text = re.sub(r'<\|ACT:.*?\|>', '', text)
-        clean_text = re.sub(r'<\|DELAY:.*?\|>', '', clean_text)
-        clean_text = clean_text.strip()
-        
-        # ElevenLabs SDK Kullanımı (Birincil)
-        client = get_eleven_client()
-        if client:
+        last_err = None
+        for attempt in range(2):
             try:
-                print(f"ElevenLabs SDK (SDK) çağrılıyor... (Metin boyutu: {len(clean_text)})")
-                voice_id = settings.ELEVENLABS_VOICE_ID or "EXAVITQu4vr4xnSDxMaL"
-                
-                # SDK ile Text-to-Speech dönüşümü
-                # Not: convert() fonksiyonu bir iterator döner, biz tüm içeriği tek seferde alacağız.
                 audio_iterator = client.text_to_speech.convert(
                     text=clean_text,
                     voice_id=voice_id,
                     model_id="eleven_multilingual_v2",
                     output_format="mp3_44100_128",
                 )
-                
-                # Bütün ses verisini birleştir
                 audio_content = b"".join(audio_iterator)
-                
                 if not audio_content:
                     raise Exception("ElevenLabs boş ses verisi döndürdü.")
-                    
                 return base64.b64encode(audio_content).decode("utf-8")
-                
             except Exception as e:
-                error_msg = str(e)
-                print(f"ElevenLabs SDK Hatası: {error_msg}")
-                if "invalid_api_key" in error_msg.lower() or "permission" in error_msg.lower():
-                    print("KRİTİK: ElevenLabs API anahtarınız hatalı! Lütfen .env dosyasını kontrol edin.")
-                print("Edge-TTS'e dönülüyor...")
-        
-        # Edge-TTS (Yedek)
-        print(f"Edge-TTS çağrılıyor... (Dil: {lang})")
-        edge_voice = "tr-TR-EmelNeural"
-        if lang.startswith("en"):
-            edge_voice = "en-US-JennyNeural"
-            
-        communicate = edge_tts.Communicate(clean_text, edge_voice)
-        
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
-            temp_path = temp_file.name
-            
-        try:
-            await communicate.save(temp_path)
-            with open(temp_path, "rb") as audio_file:
-                audio_data = audio_file.read()
-                return base64.b64encode(audio_data).decode("utf-8")
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-                
+                last_err = e
+                if "disconnected" in str(e).lower() or "connection" in str(e).lower():
+                    import asyncio
+                    await asyncio.sleep(1)
+                else:
+                    raise
+        raise last_err
     except Exception as e:
-        print(f"KRİTİK TTS HATASI: {str(e)}")
+        error_msg = str(e).lower()
+        if "invalid" in error_msg or "permission" in error_msg or "quota" in error_msg or "not found" in error_msg:
+            print(f"[TTS] ElevenLabs Hatası ({str(e)}). Fallback -> Edge-TTS...")
+            return await generate_tts_edge(clean_text, lang)
         raise Exception(f"TTS Motoru Hatası: {str(e)}")

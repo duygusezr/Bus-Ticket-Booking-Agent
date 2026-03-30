@@ -24,7 +24,7 @@ def _log_stt_error(e: Exception, tb: str) -> None:
 @router.post("/api/stt")
 async def stt_endpoint(file: UploadFile = File(...), lang: str = Form(settings.DEFAULT_LANG)):
     """
-    Kullanıcıdan gelen ses dosyasını (webm/wav/mp3) Groq Whisper API üzerinden metne dönüştürür.
+    Kullanıcıdan gelen ses dosyasını (webm/wav/mp3) ElevenLabs Scribe API üzerinden metne dönüştürür.
     """
     try:
         audio_bytes = await file.read()

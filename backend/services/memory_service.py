@@ -31,7 +31,9 @@ def update_memory(user_input: str, ai_response: str, session_id: str = "default"
 
 def _summarize(session: dict, session_id: str):
     try:
-        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        api_key = settings.GOOGLE_API_KEY
+        print(f"[MEMORY DEBUG] Summary key check: {api_key[:10]}...")
+        client = genai.Client(api_key=api_key)  # rotasyon sistemini kullanır
         buffer_text = "\n".join(
             f"Kullanıcı: {m['user']}\nELA: {m['ai']}" for m in session["buffer"]
         )

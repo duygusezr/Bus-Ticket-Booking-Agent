@@ -37,9 +37,15 @@ class SemanticCache:
             cls._instance.threshold = 0.90 # Similarity threshold (0.0 to 1.0)
             cls._instance.max_items = 500   # Cache max boyutu — RAM taşmasını önler
             
-            # persistent file (optional, but good for local)
+            # Persistent file disabled as per user request (clear on every run)
             cls._instance.cache_file = "semantic_cache_data.json"
-            cls._instance._load_cache()
+            if os.path.exists(cls._instance.cache_file):
+                try:
+                    os.remove(cls._instance.cache_file)
+                    print(f"[SEMANTIC CACHE] Old cache file deleted for a fresh start.")
+                except:
+                    pass
+            # cls._instance._load_cache() # Disabled persistence
             
         return cls._instance
 
@@ -141,8 +147,8 @@ class SemanticCache:
             "vector": embedding,
             "data": new_data
         })
-        self._save_cache_item(query, text, audio, emotion)
-        print(f"[SEMANTIC CACHE] Added new item: {query[:30]}...")
+        # self._save_cache_item(query, text, audio, emotion) # Disabled persistence
+        print(f"[SEMANTIC CACHE] Added new item (RAM only): {query[:30]}...")
 
 # Singleton helper
 semantic_cache = SemanticCache()
