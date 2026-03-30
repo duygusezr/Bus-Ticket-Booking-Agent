@@ -91,43 +91,34 @@ def normalize_city(city_name: str) -> str:
 def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
     """
     T.C. Kimlik numarasını algoritmik olarak doğrular.
-    Kurallar:
-    1. 11 haneli olmalı
-    2. Tamamı rakamlardan oluşmalı
-    3. İlk hane 0 olamaz
-    4. İlk 10 hanenin toplamının mod 10'u = 11. hane
-    5. (1,3,5,7,9. haneler toplamı × 7 - 2,4,6,8. haneler toplamı) mod 10 = 10. hane
-    6. (1-8. haneler toplamı) mod 10 = 9. hane değil — doğrusu aşağıda
-    
-    Returns: (is_valid, error_message)
     """
-    # Boşlukları temizle
-    tc_no = tc_no.strip().replace(" ", "")
+    # Temizlik ve temel kontrol
+    tc_no = str(tc_no).strip().replace(" ", "")
     
-    if len(tc_no) != 11:
-        return False, f"T.C. Kimlik numarası 11 haneli olmalıdır. Girdiğiniz numara {len(tc_no)} haneli."
-    
-    if not tc_no.isdigit():
-        return False, "T.C. Kimlik numarası sadece rakamlardan oluşmalıdır."
+    if len(tc_no) != 11 or not tc_no.isdigit():
+        return False, "T.C. Kimlik numarası tam olarak 11 rakamdan oluşmalıdır."
     
     if tc_no[0] == '0':
         return False, "T.C. Kimlik numarası 0 ile başlayamaz."
     
     digits = [int(d) for d in tc_no]
     
-    # 10. hane kontrolü: (tek pozisyonlar toplamı × 7 - çift pozisyonlar toplamı) mod 10
-    odd_sum = sum(digits[i] for i in range(0, 9, 2))   # 1,3,5,7,9. haneler (index 0,2,4,6,8)
-    even_sum = sum(digits[i] for i in range(1, 8, 2))   # 2,4,6,8. haneler (index 1,3,5,7)
+    # 10. hane: ((1,3,5,7,9. haneler toplamı * 7) - (2,4,6,8. haneler toplamı)) % 10
+    sum_odd = digits[0] + digits[2] + digits[4] + digits[6] + digits[8]
+    sum_even = digits[1] + digits[3] + digits[5] + digits[7]
     
-    tenth_digit = (odd_sum * 7 - even_sum) % 10
-    if digits[9] != tenth_digit:
-        return False, "Girdiğiniz T.C. Kimlik numarası geçerli değil. Lütfen kontrol edip tekrar giriniz."
+    tenth_digit = ((sum_odd * 7) - sum_even) % 10
     
-    # 11. hane kontrolü: ilk 10 hanenin toplamı mod 10
+    # 11. hane: ilk 10 hanenin toplamı % 10
     eleventh_digit = sum(digits[:10]) % 10
-    if digits[10] != eleventh_digit:
-        return False, "Girdiğiniz T.C. Kimlik numarası geçerli değil. Lütfen kontrol edip tekrar giriniz."
     
+    is_valid = (digits[9] == tenth_digit and digits[10] == eleventh_digit)
+    
+    print(f"[TC_LOG] Input: {tc_no}, Odd: {sum_odd}, Even: {sum_even}, Exp10: {tenth_digit}, Exp11: {eleventh_digit}, Valid: {is_valid}")
+    
+    if not is_valid:
+        return False, "Girdiğiniz numara T.C. Kimlik algoritmasına uygun değil. Lütfen rakamları kontrol edin."
+        
     return True, "Geçerli"
 
 
@@ -226,6 +217,14 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
         
     except Exception as e:
         return f"Veritabanı hatası: {str(e)}"
+
+def validate_tc_number(tc_no: str) -> str:
+    """Validates a Turkish Identity Number (T.C. Kimlik No) using the official checksum algorithm."""
+    is_valid, msg = validate_tc_kimlik(tc_no)
+    if is_valid:
+        return f"T.C. Kimlik numarası ({tc_no}) doğrulandı. İşlemlere devam edebiliriz."
+    else:
+        return f"Hata: {msg}"
 
 def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: str, eposta: str, koltuk_no: str) -> str:
     """Makes a bus ticket reservation. Validates TC identity number, updates available seats, and returns a PNR code upon success."""

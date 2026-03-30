@@ -654,6 +654,7 @@ function initWebSocket() {
             setEmotion(data.content);
         }
         else if (data.type === 'done') {
+            isSending = false;
             chatHistory.push({ role: 'assistant', content: currentFullResponse });
             if (!currentAiBubble && currentFullResponse.trim() !== '') {
                 addToHistoryPanel('ai', currentFullResponse);
@@ -662,6 +663,7 @@ function initWebSocket() {
             currentFullResponse = "";
         }
         else if (data.type === 'error') {
+            isSending = false;
             if (subtitle) subtitle.textContent = "Hata: " + data.content;
             addToHistoryPanel('ai', "Hata: " + data.content);
             setEmotion('sad');
@@ -884,10 +886,14 @@ chatInput.addEventListener('input', () => { if (chatInput.value.trim().length > 
 
 const chatHistory = []; // Konuşma geçmişi (son 10 mesaj gönderilir)
 
+let isSending = false;
+
 async function sendMessage() {
+    if (isSending) return;
     const text = chatInput.value.trim();
     if (!text) return;
 
+    isSending = true;
     stopAudio();
     await initWebAudio();
     handleEmotionsLocal(text); // Kullanıcı mesajına anlık tepki
