@@ -28,7 +28,7 @@ ELA is an AI assistant that engages in real-time voice conversations with users 
 
 ## ✨ Features
 
-- **Hybrid AI Architecture:** Combines Gemini 2.5 Flash's technical reasoning (Tool Calling) with OpenAI GPT-4o-mini's natural conversational UX.
+- **Gemini-Powered AI:** Google Gemini 2.5 Flash handles both intelligent tool calling and natural conversational responses in a single pass.
 - **Smart Date Management:** Understands relative time expressions (tomorrow, next week, etc.) and automatically suggests future dates when no trips are available.
 - **Dynamic City Matching:** Correctly matches routes even with misspellings via Turkish character normalization (İ/I, ı/i).
 - **Real-Time 3D Avatar:** Three.js + VRM-based animated character that reacts to LLM emotions (ACT tokens).
@@ -44,8 +44,7 @@ ELA is an AI assistant that engages in real-time voice conversations with users 
 | **Backend** | Python 3.11+, FastAPI, Uvicorn, SQLite |
 | **Frontend** | HTML5, Vanilla CSS (Glassmorphism), JavaScript (ES6+ Modules) |
 | **3D Engine** | Three.js, @pixiv/three-vrm |
-| **Logic Engine** | Google Gemini 2.5 Flash (Brain & Tool Calling) |
-| **UX / Persona** | OpenAI GPT-4o-mini (Natural Conversation) |
+| **AI Engine** | Google Gemini 2.5 Flash (Logic, Tool Calling & Conversation) |
 | **Audio** | ElevenLabs Scribe (STT), ElevenLabs TTS (Voice Synthesis) |
 | **NLP** | Sentence-Transformers (Semantic Search & Cache) |
 
@@ -56,8 +55,7 @@ ELA is an AI assistant that engages in real-time voice conversations with users 
 ### Prerequisites
 
 - Python 3.11 or higher
-- [Google AI Studio](https://aistudio.google.com/) — at least one Gemini API Key
-- [OpenAI Platform](https://platform.openai.com/) — an API Key
+- [Google AI Studio](https://aistudio.google.com/) — a Gemini API Key
 - [ElevenLabs](https://elevenlabs.io/) — TTS API Key and Voice ID
 
 ### Step-by-Step Installation
@@ -94,11 +92,9 @@ ELA is an AI assistant that engages in real-time voice conversations with users 
 
     ```env
     GOOGLE_API_KEY=your_google_api_key_here
-    OPENAI_API_KEY=your_openai_api_key_here
     ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
     ELEVENLABS_VOICE_ID=your_voice_id_here
     GEMINI_CHAT_MODEL=gemini-2.5-flash
-    GPT_MODEL=gpt-4o-mini
     DEFAULT_LANG=tr
     PORT=8001
     ```
@@ -134,12 +130,10 @@ Key environment variables in `.env`:
 
 | Variable | Description |
 | ---------- | ------------- |
-| `GOOGLE_API_KEY` | Gemini API key (Logic Engine). |
-| `OPENAI_API_KEY` | OpenAI API key (UX / Conversational Layer). |
+| `GOOGLE_API_KEY` | Gemini API key. |
 | `ELEVENLABS_API_KEY` | API key for voice synthesis and speech recognition. |
 | `ELEVENLABS_VOICE_ID` | Voice ID used for the ELA character. |
-| `GEMINI_CHAT_MODEL` | Logic model (e.g., `gemini-2.5-flash`). |
-| `GPT_MODEL` | Dialogue model (e.g., `gpt-4o-mini`). |
+| `GEMINI_CHAT_MODEL` | AI model (e.g., `gemini-2.5-flash`). |
 | `CORS_ORIGINS` | Allowed frontend origins (comma-separated). |
 
 ---
@@ -170,8 +164,7 @@ Bus-Ticket-Booking-Agent/
     │   └── emotion.py          # Emotion analysis endpoint
     │
     └── services/
-        ├── llm_service.py      # Gemini (Logic Engine) integration
-        ├── openai_service.py   # OpenAI (UX Layer) integration
+        ├── llm_service.py      # Gemini AI integration (Logic + Conversation)
         ├── tools.py            # Smart date & ticketing logic (Core)
         ├── tts_service.py      # Voice synthesis service
         ├── stt_service.py      # Speech recognition service

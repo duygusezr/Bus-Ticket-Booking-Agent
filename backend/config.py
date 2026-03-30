@@ -77,8 +77,6 @@ class Settings:
     ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
     SYSTEM_PROMPT: str = SYSTEM_PROMPT
     DEFAULT_LANG: str = os.getenv("DEFAULT_LANG", "tr")
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    GPT_MODEL: str = os.getenv("GPT_MODEL", "gpt-4o-mini")
     PORT: int = int(os.getenv("PORT", 8001))
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
     GEMINI_CHAT_MODEL: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
