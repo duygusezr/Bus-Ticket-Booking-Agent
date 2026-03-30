@@ -124,6 +124,52 @@ def _convert_turkish_number_words(text: str) -> str:
 
     return re.sub(r"\s+", " ", t).strip()
 
+
+def _collapse_numeric_sequences(text: str) -> str:
+    """
+    If transcript is mostly numeric chunks (e.g. "37 50 60 12 74"),
+    collapse them into a continuous number for ID/phone style inputs.
+    """
+    if not text:
+        return ""
+
+    normalized = text.strip()
+    # Keep only digits and separators to test whether input is numeric-dominant.
+    numeric_only_probe = re.sub(r"[\d\s\.,;:!\?\-\(\)/]+", "", normalized)
+    if numeric_only_probe:
+        return normalized
+
+    chunks = re.findall(r"\d+", normalized)
+    if len(chunks) < 3:
+        return normalized
+
+    # "60 1" -> "61" gibi STT parçalanmalarını birleştir
+    merged_chunks = []
+    i = 0
+    while i < len(chunks):
+        cur = chunks[i]
+        nxt = chunks[i + 1] if i + 1 < len(chunks) else None
+        if (
+            nxt is not None
+            and cur.isdigit()
+            and nxt.isdigit()
+            and int(cur) in {20, 30, 40, 50, 60, 70, 80, 90}
+            and len(nxt) == 1
+        ):
+            merged_chunks.append(str(int(cur) + int(nxt)))  # 60 + 1 -> 61
+            i += 2
+            continue
+        merged_chunks.append(cur)
+        i += 1
+
+    chunks = merged_chunks
+    joined = "".join(chunks)
+    # Common voice-entered identifiers in this app:
+    # TC: 11 digits, phone: 10-11 digits.
+    if len(joined) in (10, 11):
+        return joined
+    return normalized
+
 async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settings.DEFAULT_LANG) -> dict:
     """Sadece ElevenLabs SDK (Scribe) kullanır."""
     if not audio_bytes or len(audio_bytes) == 0:
@@ -160,6 +206,7 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
         raw_text = str(getattr(resp, "text", "") or getattr(resp, "transcript", "") or "")
         clean_text = _normalize_stt_text(raw_text)
         clean_text = _convert_turkish_number_words(clean_text)
+        clean_text = _collapse_numeric_sequences(clean_text)
         print(f"DEBUG: Transkripsiyon başarılı: {raw_text[:50]}...")
         if clean_text != raw_text:
             print(f"DEBUG: STT normalize edildi: '{raw_text}' -> '{clean_text}'")

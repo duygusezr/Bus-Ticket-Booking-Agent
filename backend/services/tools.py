@@ -3,6 +3,8 @@ import sqlite3
 import csv
 import random
 import string
+import re
+from typing import Optional
 from datetime import datetime
 from pathlib import Path
 
@@ -92,37 +94,104 @@ def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
     """
     T.C. Kimlik numarasını algoritmik olarak doğrular.
     """
-    # Temizlik ve temel kontrol
-    tc_no = str(tc_no).strip().replace(" ", "")
-    
-    if len(tc_no) != 11 or not tc_no.isdigit():
-        return False, "T.C. Kimlik numarası tam olarak 11 rakamdan oluşmalıdır."
-    
+    def _normalize_tokens(text: str) -> list[str]:
+        t = (text or "").lower()
+        t = t.replace("ı", "i").replace("ş", "s").replace("ğ", "g").replace("ü", "u").replace("ö", "o").replace("ç", "c")
+        t = re.sub(r"[^0-9a-zA-Z\s]", " ", t)
+        t = re.sub(r"\s+", " ", t).strip()
+        return t.split(" ") if t else []
+
+    def _extract_numeric_stream(text: str) -> str:
+        # Yazıyla ve rakamla gelen sayı ifadelerini sırayla rakama çevirir.
+        unit_map = {
+            "sifir": 0, "bir": 1, "iki": 2, "uc": 3, "dort": 4,
+            "bes": 5, "alti": 6, "yedi": 7, "sekiz": 8, "dokuz": 9
+        }
+        ten_map = {"on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, "altmis": 60, "yetmis": 70, "seksen": 80, "doksan": 90}
+        compound_map = {
+            "onbir": 11, "oniki": 12, "onuc": 13, "ondort": 14, "onbes": 15, "onalti": 16, "onyedi": 17, "onsekiz": 18, "ondokuz": 19
+        }
+
+        tokens = _normalize_tokens(text)
+        parts: list[str] = []
+        i = 0
+        while i < len(tokens):
+            tok = tokens[i]
+            if tok.isdigit():
+                parts.append(tok)
+                i += 1
+                continue
+            if tok in compound_map:
+                parts.append(str(compound_map[tok]))
+                i += 1
+                continue
+            if tok in ten_map:
+                nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+                if nxt in unit_map:
+                    parts.append(str(ten_map[tok] + unit_map[nxt]))  # "yetmis iki" -> 72
+                    i += 2
+                    continue
+                parts.append(str(ten_map[tok]))
+                i += 1
+                continue
+            if tok in unit_map:
+                parts.append(str(unit_map[tok]))
+                i += 1
+                continue
+            i += 1
+
+        return "".join(parts)
+
+    def _tc_checksum_ok(candidate: str) -> bool:
+        if len(candidate) != 11 or not candidate.isdigit() or candidate[0] == "0":
+            return False
+        d = [int(x) for x in candidate]
+        odd = d[0] + d[2] + d[4] + d[6] + d[8]
+        even = d[1] + d[3] + d[5] + d[7]
+        tenth = ((odd * 7) - even) % 10
+        eleventh = sum(d[:10]) % 10
+        return d[9] == tenth and d[10] == eleventh and (d[10] % 2 == 0)
+
+    stream = _extract_numeric_stream(str(tc_no).strip())
+
+    if len(stream) < 11:
+        return False, "T.C. Kimlik numarası tam olarak 11 rakamdan oluşmalıdır. Lütfen rakam rakam (ör. 1 0 0 0 ...) söyleyin veya klavyeden yazın."
+
+    if len(stream) > 11:
+        # Fazla hanede en mantıklı 11'liyi bulmak için kayan pencere dener.
+        for i in range(0, len(stream) - 10):
+            cand = stream[i:i + 11]
+            if _tc_checksum_ok(cand):
+                stream = cand
+                break
+        else:
+            stream = stream[:11]
+
+    tc_no = stream
     if tc_no[0] == '0':
         return False, "T.C. Kimlik numarası 0 ile başlayamaz."
-    
+
     digits = [int(d) for d in tc_no]
-    
-    # 10. hane: ((1,3,5,7,9. haneler toplamı * 7) - (2,4,6,8. haneler toplamı)) % 10
     sum_odd = digits[0] + digits[2] + digits[4] + digits[6] + digits[8]
     sum_even = digits[1] + digits[3] + digits[5] + digits[7]
-    
     tenth_digit = ((sum_odd * 7) - sum_even) % 10
-    
-    # 11. hane: ilk 10 hanenin toplamı % 10
     eleventh_digit = sum(digits[:10]) % 10
-    
     is_valid = (digits[9] == tenth_digit and digits[10] == eleventh_digit)
-    
-    print(f"[TC_LOG] Input: {tc_no}, Odd: {sum_odd}, Even: {sum_even}, Exp10: {tenth_digit}, Exp11: {eleventh_digit}, Valid: {is_valid}")
-    
+    is_even_last_digit = (digits[10] % 2 == 0)
+
+    print(
+        f"[TC_LOG] Input: {tc_no}, Odd: {sum_odd}, Even: {sum_even}, "
+        f"Exp10: {tenth_digit}, Exp11: {eleventh_digit}, EvenLast: {is_even_last_digit}, Valid: {is_valid}"
+    )
+
+    if not is_even_last_digit:
+        return False, "T.C. Kimlik numarası çift sayı ile bitmelidir."
     if not is_valid:
         return False, "Girdiğiniz numara T.C. Kimlik algoritmasına uygun değil. Lütfen rakamları kontrol edin."
-        
     return True, "Geçerli"
 
 
-def get_bus_trips(departure_city: str, destination_city: str, travel_date: str = None) -> str:
+def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optional[str] = None) -> str:
     """Gets bus trips between departure_city and destination_city. 
     If travel_date is provided (YYYY-MM-DD), searches for that date. 
     If no trips found or no date provided, returns nearest 3 available dates."""
@@ -186,17 +255,20 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: str =
                 )
             return "\n".join(result)
 
-        # 2. Tam eşleşme yoksa EN YAKIN gelecek tarihleri bul
-        # Eğer kullanıcı bir tarih verdiyse o tarihe en yakın olanları,
-        # vermemişse bugüne en yakın olanları sırala
+        # 2. Tam eşleşme yoksa yakın tarihleri bul
+        # Kullanıcı tarih verdiyse sadece +/- 3 gün penceresinde öneri sun.
+        # Uzak tarihlere sıçrama yapma.
         if target_dt:
-            sorted_others = sorted(others, key=lambda x: abs((x[1] - target_dt).days))
+            close_window = [x for x in others if abs((x[1] - target_dt).days) <= 3]
+            sorted_others = sorted(close_window, key=lambda x: (abs((x[1] - target_dt).days), x[1]))
             msg = f"{target_dt.strftime('%d.%m.%Y')} tarihinde tam uyan bir sefer bulamadım ama en yakın şu tarihlerde yardımcı olabilirim:"
         else:
             sorted_others = sorted(others, key=lambda x: x[1])
             msg = f"{departure_city} - {destination_city} güzergahı için en yakın seferlerimiz şunlar:"
 
         if not sorted_others:
+            if target_dt:
+                return f"{target_dt.strftime('%d.%m.%Y')} için yakın tarihlerde (+/- 3 gün) uygun sefer bulamadım. İsterseniz farklı bir tarih söyleyin, hemen kontrol edeyim."
             return f"Maalesef {departure_city} - {destination_city} güzergahında yakın zamanda bir seferimiz görünmüyor."
 
         result = [msg]
@@ -264,15 +336,16 @@ def validate_seat_selection(user_input: str, available_seats_str: str) -> str:
     print(f"[SEAT_LOG] User: {user_input} -> Extracted: {seat}, Avail: {valid_seats}")
 
     if seat in valid_seats:
-        return f"Koltuk {seat} uygun. Rezervasyon işlemine devam edebiliriz."
+        return f"Koltuk {seat} uygun. Devam etmek istiyor musunuz?"
     else:
         return f"Hata: {seat} numaralı koltuk mevcut değil veya zaten dolu. Lütfen şunlardan birini seçin: {available_seats_str}"
 
 def validate_tc_number(tc_no: str) -> str:
     """Validates a Turkish Identity Number (T.C. Kimlik No) using the official checksum algorithm."""
+    normalized_tc = "".join(ch for ch in str(tc_no) if ch.isdigit())
     is_valid, msg = validate_tc_kimlik(tc_no)
     if is_valid:
-        return f"T.C. Kimlik numarası ({tc_no}) doğrulandı. İşlemlere devam edebiliriz."
+        return f"T.C. Kimlik numarası ({normalized_tc}) doğrulandı. İşlemlere devam edebiliriz."
     else:
         return f"Hata: {msg}"
 
