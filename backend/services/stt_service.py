@@ -21,6 +21,21 @@ def _normalize_stt_text(raw_text: str) -> str:
     text = re.sub(r"\(([^)]*)\)", " ", text)  # remove parenthesized cues
     text = re.sub(r"\s+", " ", text).strip()
 
+    # Kendi kendine tekrar eden kısa metinleri temizleme (ElevenLabs/STT halüsinasyonu)
+    # 1. Karakter bazlı tam tekrar (Örn: "uygusazar.uygusazar.")
+    if len(text) > 3 and len(text) % 2 == 0:
+        half = len(text) // 2
+        if text[:half] == text[half:]:
+            text = text[:half]
+
+    # 2. Kelime bazlı tekrar (Örn: "Duygu Sezer Duygu Sezer")
+    words = text.split()
+    if len(words) > 0 and len(words) % 2 == 0:
+        half_w = len(words) // 2
+        if words[:half_w] == words[half_w:]:
+            text = " ".join(words[:half_w])
+
+
     # Split by sentence boundaries and score each part by booking relevance.
     parts = [p.strip(" .,!?:;") for p in re.split(r"[.!?]+", text) if p.strip(" .,!?:;")]
     if not parts:
@@ -93,7 +108,7 @@ def _normalize_numeric_input(text: str) -> str:
     }
     ten_map = {
         "on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50,
-        "altmis": 60, "yetmis": 70, "seksen": 80, "doksan": 90
+        "altmis": 60, "atmis": 60, "almis": 60, "yetmis": 70, "yemis": 70, "seksen": 80, "seksan": 80, "doksan": 90
     }
     # Bitişik compound'lar (STT bazen boşluksuz yazar)
     compound_map = {
@@ -300,6 +315,37 @@ def _collapse_numeric_sequences(text: str) -> str:
     return normalized
 
 
+def _detect_email_context(text: str) -> bool:
+    """
+    Metnin e-posta adresi içerip içermediğini tespit eder.
+    Sesli söylenen email kalıplarını tanır.
+    """
+    if not text:
+        return False
+    
+    t = text.lower().strip()
+    t = t.replace("ı", "i").replace("ş", "s").replace("ğ", "g")
+    t = t.replace("ü", "u").replace("ö", "o").replace("ç", "c")
+    
+    # Zaten @ varsa kesin email
+    if "@" in t:
+        return True
+    
+    # "at" veya "et" + email domain ipuçları
+    at_words = any(w in t.split() for w in ["at", "et"])
+    domain_hints = any(d in t for d in ["gmail", "mail", "hotmail", "yahoo", "outlook", "yandex", "icloud"])
+    dot_hints = any(d in t.split() for d in ["nokta", "dot", "com", "net", "org"])
+    
+    # "at/et" + domain veya "at/et" + nokta/com  
+    if at_words and (domain_hints or dot_hints):
+        return True
+    
+    # domain + nokta/com (email yazılı ama @ olmadan)
+    if domain_hints and dot_hints:
+        return True
+    
+    return False
+
 def _detect_numeric_context(text: str) -> bool:
     """
     Metnin sayısal veri (TC, telefon vb.) içerip içermediğini tespit eder.
@@ -312,16 +358,29 @@ def _detect_numeric_context(text: str) -> bool:
     t_normalized = t.replace("ı", "i").replace("ş", "s").replace("ğ", "g")
     t_normalized = t_normalized.replace("ü", "u").replace("ö", "o").replace("ç", "c")
     
-    # Türkçe sayı kelimeleri
+    # Türkçe sayı kelimeleri (STT yanlış duyma varyantları dahil)
     number_words = {
         "sifir", "bir", "iki", "uc", "dort", "bes", "alti", "yedi", "sekiz", "dokuz",
-        "on", "yirmi", "otuz", "kirk", "elli", "altmis", "yetmis", "seksen", "doksan",
+        "on", "yirmi", "otuz", "kirk", "elli", "altmis", "atmis", "almis", "yetmis", "yemis", "seksen", "seksan", "doksan",
         "onbir", "oniki", "onuc", "ondort", "onbes", "onalti", "onyedi", "onsekiz", "ondokuz"
     }
     
     tokens = re.sub(r"[^a-z0-9\s]", " ", t_normalized).split()
     if not tokens:
         return False
+        
+    # Tarih, gün, ay, yıl belirten kelimeler içeriyorsa sayısal ağırlıklı BAĞLAM kabul etme
+    exclude_words = {
+        "ocak", "subat", "mart", "nisan", "mayis", "haziran", 
+        "temmuz", "agustos", "eylul", "ekim", "kasim", "aralik",
+        "bugun", "yarin", "haftaya", "gun", "ay", "yil",
+        "pazartesi", "sali", "carsamba", "persembe", "cuma", "cumartesi", "pazar",
+        "bin", "yuz", "isim", "sehir", "bursa", "istanbul", "ankara", "gidis", "donus"
+    }
+    
+    for tok in tokens:
+        if tok in exclude_words:
+            return False
     
     numeric_token_count = 0
     for tok in tokens:
@@ -374,12 +433,14 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
         clean_text = _normalize_stt_text(raw_text)
         print(f"DEBUG: ASR temizleme sonrası: '{clean_text}'")
         
-        # Adım 2: Sayısal bağlam tespiti
-        is_numeric = _detect_numeric_context(clean_text)
-        print(f"DEBUG: Sayısal bağlam: {is_numeric}")
-        
-        if is_numeric:
-            # Sayısal veri ise (TC, telefon vb.) agresif normalize et
+        # Adım 2: Bağlam tespiti ve uygun normalize
+        if _detect_email_context(clean_text):
+            # E-posta bağlamı tespit edildi
+            from services.tools import _normalize_email_input
+            clean_text = _normalize_email_input(clean_text)
+            print(f"DEBUG: Email normalize: '{raw_text}' -> '{clean_text}'")
+        elif _detect_numeric_context(clean_text):
+            # Sayısal veri (TC, telefon vb.)
             numeric_result = _normalize_numeric_input(clean_text)
             print(f"DEBUG: Sayısal normalize: '{clean_text}' -> '{numeric_result}'")
             clean_text = numeric_result
@@ -389,8 +450,6 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
             clean_text = _collapse_numeric_sequences(clean_text)
         
         print(f"DEBUG: Final STT çıktısı: '{clean_text}'")
-        if clean_text != raw_text:
-            print(f"DEBUG: STT normalize edildi: '{raw_text}' -> '{clean_text}'")
 
         return {
             "text": clean_text,

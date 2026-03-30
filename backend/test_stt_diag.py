@@ -6,10 +6,10 @@ from elevenlabs.client import ElevenLabs
 # .env yukle
 load_dotenv('.env', override=True)
 api_key = os.getenv('ELEVENLABS_API_KEY')
+_key_preview = (api_key[:10] + "...") if api_key else "(ayarlanmamis)"
+print(f"Test anahtari: {_key_preview}")
 
-print(f"Test anahtari: {api_key[:10]}...")
-
-client = ElevenLabs(api_key=api_key)
+client = ElevenLabs(api_key=api_key or "")
 
 def test_stt():
     try:
@@ -23,7 +23,8 @@ def test_stt():
             file=("test.wav", audio_file, "audio/wav"),
             model_id="scribe_v1",
         )
-        print("Basarili! Transkripsiyon sonucu:", resp.text)
+        transcript = str(getattr(resp, "text", "") or getattr(resp, "transcript", "") or "")
+        print("Basarili! Transkripsiyon sonucu:", transcript)
     except Exception as e:
         print("\n!!! STT HATASI ALINDI !!!")
         print(f"Hata detayi: {str(e)}")

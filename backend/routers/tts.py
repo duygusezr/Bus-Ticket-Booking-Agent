@@ -18,7 +18,9 @@ async def tts_endpoint(request: TTSRequest):
     ve base64 MP3 olarak string döner.
     """
     try:
-        audio_base64 = await generate_tts(request.text, request.lang, request.voice)
+        lang = request.lang or settings.DEFAULT_LANG
+        voice = request.voice or "default"
+        audio_base64 = await generate_tts(request.text, lang, voice)
         return {"audio": audio_base64}
     except Exception as e:
         raise HTTPException(status_code=500, detail={"error": "Metinden sese çevirme başarısız.", "message": str(e)})

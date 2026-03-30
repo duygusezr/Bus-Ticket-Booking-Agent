@@ -107,7 +107,7 @@ def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
             "sifir": 0, "bir": 1, "iki": 2, "uc": 3, "dort": 4,
             "bes": 5, "alti": 6, "yedi": 7, "sekiz": 8, "dokuz": 9
         }
-        ten_map = {"on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, "altmis": 60, "yetmis": 70, "seksen": 80, "doksan": 90}
+        ten_map = {"on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, "altmis": 60, "atmis": 60, "almis": 60, "yetmis": 70, "yemis": 70, "seksen": 80, "seksan": 80, "doksan": 90}
         compound_map = {
             "onbir": 11, "oniki": 12, "onuc": 13, "ondort": 14, "onbes": 15, "onalti": 16, "onyedi": 17, "onsekiz": 18, "ondokuz": 19
         }
@@ -270,7 +270,7 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optio
             result = [f"{travel_date} tarihinde {departure_city} -> {destination_city} için bulunan seferler:"]
             for row in exact_matches[:3]:
                 result.append(
-                    f"- Sefer ID: {row['id']}, Tarih: {row['travel_datetime']}, Tipi: {row['bus_type']}, Fiyat: {row['price']} TL, Boş Koltuklar: {row['available_seats']}"
+                    f"- Sefer_ID: {row['id']}, Tarih: {row['travel_datetime']}, Tipi: {row['bus_type']}, Fiyat: {row['price']} TL, Boş Koltuklar: {row['available_seats']}"
                 )
             return "\n".join(result)
 
@@ -279,16 +279,19 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optio
         # Uzak tarihlere sıçrama yapma.
         if target_dt:
             close_window = [x for x in others if abs((x[1] - target_dt).days) <= 3]
-            sorted_others = sorted(close_window, key=lambda x: (abs((x[1] - target_dt).days), x[1]))
-            msg = f"{target_dt.strftime('%d.%m.%Y')} tarihinde tam uyan bir sefer bulamadım ama en yakın şu tarihlerde yardımcı olabilirim:"
+            if close_window:
+                sorted_others = sorted(close_window, key=lambda x: (abs((x[1] - target_dt).days), x[1]))
+                msg = f"{target_dt.strftime('%d.%m.%Y')} tarihinde tam uyan bir sefer bulamadım ama en yakın şu tarihlerde yardımcı olabilirim:"
+            else:
+                # +/- 3 gün içinde yoksa, genel en yakın 3 taneyi ver.
+                sorted_others = sorted(others, key=lambda x: abs((x[1] - target_dt).days))
+                msg = f"{target_dt.strftime('%d.%m.%Y')} yakınlarında seferimiz yok, ancak genel olarak şu tarihlerde seferlerimiz bulunuyor:"
         else:
             sorted_others = sorted(others, key=lambda x: x[1])
             msg = f"{departure_city} - {destination_city} güzergahı için en yakın seferlerimiz şunlar:"
 
         if not sorted_others:
-            if target_dt:
-                return f"{target_dt.strftime('%d.%m.%Y')} için yakın tarihlerde (+/- 3 gün) uygun sefer bulamadım. İsterseniz farklı bir tarih söyleyin, hemen kontrol edeyim."
-            return f"Maalesef {departure_city} - {destination_city} güzergahında yakın zamanda bir seferimiz görünmüyor."
+            return f"Maalesef {departure_city} - {destination_city} güzergahında sistemde kayıtlı hiçbir sefer görünmüyor."
 
         result = [msg]
         seen_dates = set()
@@ -296,8 +299,8 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optio
         for row, dt in sorted_others:
             date_str = dt.strftime("%d.%m.%Y")
             if date_str not in seen_dates:
-                # Sefer ID'yi parantez içinde sona koyuyoruz ki LLM onu bilsin ama kullanıcıya yansıtmasın
-                result.append(f"- {date_str} (Fiyat: {row['price']} TL, Tip: {row['bus_type']}, ID: {row['id']})")
+                # Sadece tarihi veriyoruz ki kullanıcı boğulmasın. Seçtiğinde tekrar arama yapıp detayı çekecek.
+                result.append(f"- {date_str}")
                 seen_dates.add(date_str)
                 count += 1
             if count >= 3: break
@@ -361,10 +364,9 @@ def validate_seat_selection(user_input: str, available_seats_str: str) -> str:
 
 def validate_tc_number(tc_no: str) -> str:
     """Validates a Turkish Identity Number (T.C. Kimlik No) using the official checksum algorithm."""
-    normalized_tc = "".join(ch for ch in str(tc_no) if ch.isdigit())
     is_valid, msg = validate_tc_kimlik(tc_no)
     if is_valid:
-        return f"T.C. Kimlik numarası ({normalized_tc}) doğrulandı. İşlemlere devam edebiliriz."
+        return "T.C. Kimlik numarası başarıyla doğrulandı. İşlemlere devam edebiliriz."
     else:
         return f"Hata: {msg}"
 
@@ -377,7 +379,7 @@ def _normalize_phone_input(text: str) -> str:
     t = re.sub(r"\s+", " ", t).strip()
 
     unit_map = {"sifir": 0, "bir": 1, "iki": 2, "uc": 3, "dort": 4, "bes": 5, "alti": 6, "yedi": 7, "sekiz": 8, "dokuz": 9}
-    ten_map = {"on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, "altmis": 60, "yetmis": 70, "seksen": 80, "doksan": 90}
+    ten_map = {"on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, "altmis": 60, "atmis": 60, "almis": 60, "yetmis": 70, "yemis": 70, "seksen": 80, "seksan": 80, "doksan": 90}
 
     parts = []
     tokens = t.split(" ") if t else []
@@ -424,55 +426,161 @@ def _normalize_phone_input(text: str) -> str:
 
     parts = merged_parts
     digits = "".join(parts)
+    
+    # +90 / 90 ülke kodu varsa kaldır
+    if len(digits) == 12 and digits.startswith("90") and digits[2] == "5":
+        digits = "0" + digits[2:]  # 905372791437 -> 05372791437
+    elif len(digits) == 13 and digits.startswith("090"):
+        digits = digits[1:]  # 0905372791437 -> 05372791437
+    
     if len(digits) == 10 and digits.startswith("5"):
         digits = "0" + digits
+    
+    print(f"[PHONE_NORM] Input: '{text}' -> Digits: '{digits}' (len={len(digits)})")
     return digits
 
 
 def validate_phone_number(phone: str) -> str:
     """Türkiye telefon numarasını normalize eder ve doğrular."""
+    # LLM bazen int olarak gönderebilir (leading 0 düşer)
+    phone = str(phone).strip()
     normalized = _normalize_phone_input(phone)
+    print(f"[PHONE_VAL] Raw: '{phone}' (type={type(phone).__name__}) -> Normalized: '{normalized}'")
+    
     if not normalized.isdigit() or len(normalized) not in (10, 11):
-        return "Hata: Telefon numarasını tam doğrulayamadım. Lütfen başında 0 olacak şekilde rakam rakam paylaşır mısınız?"
-    if len(normalized) == 11 and not normalized.startswith("0"):
-        return "Hata: Telefon numarasını tam doğrulayamadım. Lütfen başında 0 olacak şekilde rakam rakam paylaşır mısınız?"
-    if len(normalized) == 11 and normalized[1] != "5":
-        return "Hata: Telefon numarasını tam doğrulayamadım. Lütfen başında 0 olacak şekilde rakam rakam paylaşır mısınız?"
-    if len(normalized) == 10 and normalized[0] != "5":
-        return "Hata: Telefon numarasını tam doğrulayamadım. Lütfen başında 0 olacak şekilde rakam rakam paylaşır mısınız?"
-    if len(normalized) == 10:
+        return f"Hata: Telefon numarası {len(normalized) if normalized.isdigit() else 0} hane algılandı. Lütfen 05XX XXX XX XX formatında tekrar dener misiniz?"
+    if len(normalized) == 10 and normalized[0] == "5":
         normalized = "0" + normalized
+    if len(normalized) == 11 and not normalized.startswith("0"):
+        return "Hata: Telefon numarası 0 ile başlamalıdır. Lütfen 05XX XXX XX XX formatında tekrar dener misiniz?"
 
     formatted = f"{normalized[0:4]} {normalized[4:7]} {normalized[7:9]} {normalized[9:11]}"
     return f"Telefon numarası doğrulandı: {formatted}"
 
 
-def validate_email_address(email: str) -> str:
-    """E-posta adresini sesli biçimden normalize eder ve doğrular."""
-    t = (email or "").strip().lower()
+def _normalize_email_input(text: str) -> str:
+    """Sesli söylenen e-posta adresini normalleştirir."""
+    t = (text or "").strip().lower()
     
-    # Sesli söylemlerde yaygın kalıplar
-    # "at" ve "et" -> @
+    # 1. Türkçe karakter normalizasyonu
+    t = t.replace("ı", "i").replace("ş", "s").replace("ğ", "g")
+    t = t.replace("ü", "u").replace("ö", "o").replace("ç", "c")
+    
+    # 2. Türkçe sayı kelimelerini rakamlara çevir ("yüz" dahil)
+    unit_map = {"sifir": "0", "bir": "1", "iki": "2", "uc": "3", "dort": "4",
+                "bes": "5", "alti": "6", "yedi": "7", "sekiz": "8", "dokuz": "9"}
+    ten_map = {"on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50,
+               "altmis": 60, "atmis": 60, "almis": 60, "yetmis": 70, "yemis": 70, "seksen": 80, "seksan": 80, "doksan": 90}
+    
+    tokens = t.split()
+    result_tokens = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        
+        # "N yuz ..." kalıbı (yüzler)
+        is_digit_or_unit = tok.isdigit() or tok in unit_map
+        if is_digit_or_unit and i + 1 < len(tokens) and tokens[i + 1] == "yuz":
+            val = int(tok) if tok.isdigit() else int(unit_map[tok])
+            hundreds = val * 100
+            i += 2  # N ve yuz'u atla
+            # Onluk
+            if i < len(tokens) and tokens[i] in ten_map:
+                hundreds += ten_map[tokens[i]]
+                i += 1
+                # Birlik (ondan sonra)
+                if i < len(tokens) and (tokens[i] in unit_map or (tokens[i].isdigit() and len(tokens[i]) == 1)):
+                    hundreds += int(unit_map.get(tokens[i], tokens[i]))
+                    i += 1
+            elif i < len(tokens) and (tokens[i] in unit_map or (tokens[i].isdigit() and len(tokens[i]) == 1)):
+                hundreds += int(unit_map.get(tokens[i], tokens[i]))
+                i += 1
+            result_tokens.append(str(hundreds))
+            continue
+        
+        # Tek başına "yuz" = 100
+        if tok == "yuz":
+            result_tokens.append("100")
+            i += 1
+            continue
+        
+        # Onluk + birlik
+        if tok in ten_map:
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if nxt in unit_map:
+                result_tokens.append(str(ten_map[tok] + int(unit_map[nxt])))
+                i += 2
+                continue
+            elif nxt.isdigit() and len(nxt) == 1:
+                result_tokens.append(str(ten_map[tok] + int(nxt)))
+                i += 2
+                continue
+            result_tokens.append(str(ten_map[tok]))
+            i += 1
+            continue
+        
+        # Birlik
+        if tok in unit_map:
+            result_tokens.append(unit_map[tok])
+            i += 1
+            continue
+        
+        # Sayı olmayan token
+        result_tokens.append(tok)
+        i += 1
+    
+    t = " ".join(result_tokens)
+    
+    # 3. @ işareti dönüşümleri
     t = re.sub(r"\b(at|et)\b", "@", t)
-    # "nokta" -> .
+    
+    # 4. Nokta dönüşümleri
     t = re.sub(r"\bnokta\b", ".", t)
-    # "dot" -> .
     t = re.sub(r"\bdot\b", ".", t)
-    # "gmail com" -> "gmail.com", "hotmail com" -> "hotmail.com"
+    
+    # 5. STT domain düzeltmeleri (yaygın yanlış duyma kalıpları)
+    t = re.sub(r"\bci\s*mail\b", "gmail", t)
+    t = re.sub(r"\bci\s*meil\b", "gmail", t)
+    t = re.sub(r"\bcimail\b", "gmail", t)
+    t = re.sub(r"\bcimeil\b", "gmail", t)
+    t = re.sub(r"\bg\s+mail\b", "gmail", t)
+    t = re.sub(r"\bhot\s*mail\b", "hotmail", t)
+    t = re.sub(r"\byahu\b", "yahoo", t)
+    t = re.sub(r"\bout\s*look\b", "outlook", t)
+    
+    # 6. Domain+TLD birleştirme
     t = re.sub(r"\b(gmail|hotmail|yahoo|outlook|icloud|yandex)\s+(com|net|org|tr)\b", r"\1.\2", t)
-    # "com tr" -> "com.tr"
     t = re.sub(r"\bcom\s+tr\b", "com.tr", t)
-    # "alt çizgi" veya "alt tire" -> _
+    
+    # 7. Özel karakter dönüşümleri
     t = re.sub(r"\b(alt\s*cizgi|alt\s*tire|underscore)\b", "_", t)
-    # "tire" -> -
     t = re.sub(r"\btire\b", "-", t)
     
-    # Boşlukları kaldır
+    # 8. Boşlukları kaldır
     t = re.sub(r"\s+", "", t)
+    
+    # 9. Sondaki noktalama temizliği (STT cümle sonuna "." ekler)
+    t = t.rstrip(".,;:!?")
+    
+    # 10. Çift tekrar temizliği (LLM bazen maili iki kez gönderir)
+    if t.count("@") == 2 and len(t) % 2 == 0:
+        half = len(t) // 2
+        if t[:half] == t[half:]:
+            t = t[:half]
+    
+    return t
+
+
+def validate_email_address(email: str) -> str:
+    """E-posta adresini sesli biçimden normalize eder ve doğrular."""
+    t = _normalize_email_input(email)
+    
+    print(f"[EMAIL_LOG] Input: '{email}' -> Normalized: '{t}'")
     
     if re.fullmatch(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", t):
         return f"E-posta doğrulandı: {t}"
-    return "Hata: E-posta adresini doğrulayamadım. Lütfen örnekteki gibi tekrar yazar mısınız: adsoyad@gmail.com"
+    return f"Hata: E-posta adresini doğrulayamadım. Algılanan: '{t}'. Lütfen örnekteki gibi tekrar yazar mısınız: adsoyad@gmail.com"
+
 
 def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: str, eposta: str, koltuk_no: str) -> str:
     """Makes a bus ticket reservation. Validates TC identity number, updates available seats, and returns a PNR code upon success."""
@@ -492,7 +600,7 @@ def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: st
         
         if not row:
             conn_seferler.close()
-            return "Hata: Belirtilen Sefer ID bulunamadı."
+            return f"Hata: Belirtilen Sefer ID ({sefer_id}) veritabanında bulunamadı."
             
         available_seats_str = row[0]
         # Koltukları listeye çevir, boşlukları temizle

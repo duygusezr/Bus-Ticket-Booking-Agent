@@ -5,13 +5,13 @@ from elevenlabs.client import ElevenLabs
 from config import settings
 import edge_tts
 
-TR_UNITS = ["sifir", "bir", "iki", "uc", "dort", "bes", "alti", "yedi", "sekiz", "dokuz"]
-TR_TENS = ["", "on", "yirmi", "otuz", "kirk", "elli", "altmis", "yetmis", "seksen", "doksan"]
+TR_UNITS = ["sıfır", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"]
+TR_TENS = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"]
 
 
 def _number_to_turkish(n: int) -> str:
     if n == 0:
-        return "sifir"
+        return "sıfır"
     if n < 0:
         return "eksi " + _number_to_turkish(-n)
 
@@ -23,9 +23,9 @@ def _number_to_turkish(n: int) -> str:
         units = rem % 10
         if hundreds:
             if hundreds == 1:
-                parts.append("yuz")
+                parts.append("yüz")
             else:
-                parts.append(f"{TR_UNITS[hundreds]} yuz")
+                parts.append(f"{TR_UNITS[hundreds]} yüz")
         if tens:
             parts.append(TR_TENS[tens])
         if units:
@@ -90,13 +90,15 @@ async def generate_tts_edge(text: str, lang: str) -> str:
     communicate = edge_tts.Communicate(text, voice)
     audio_data = bytearray()
     async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio_data.extend(chunk["data"])
+        if chunk.get("type") == "audio":
+            data = chunk.get("data")
+            if data:
+                audio_data.extend(data)
     if not audio_data:
         raise Exception("Edge-TTS boş ses verisi döndürdü.")
     return base64.b64encode(audio_data).decode("utf-8")
 
-async def generate_tts(text: str, lang: str = None, voice: str = "default") -> str:  # noqa
+async def generate_tts(text: str, lang: str | None = None, voice: str = "default") -> str:
     """
     Gelen metni sese dönüştürür.
     Önce ElevenLabs dener, hata alırsa edge-tts'e düşer.
@@ -140,6 +142,7 @@ async def generate_tts(text: str, lang: str = None, voice: str = "default") -> s
                     await asyncio.sleep(1)
                 else:
                     raise
+        assert last_err is not None
         raise last_err
     except Exception as e:
         error_msg = str(e).lower()

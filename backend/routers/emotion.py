@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
-import google.generativeai as genai
+import google.genai as genai
 from config import settings
 
 router = APIRouter()
@@ -15,19 +15,18 @@ async def analyze_emotion(request: EmotionRequest):
         if not settings.GOOGLE_API_KEY or "YOUR_GEMINI" in settings.GOOGLE_API_KEY:
             return {"emotion": "neutral"}
 
-        genai.configure(api_key=settings.GOOGLE_API_KEY)
-        model = genai.GenerativeModel(
-            model_name=settings.GEMINI_CHAT_MODEL,
-        )
-        
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
         prompt = f"""Gelen metnin aşağıdaki duygulardan hangisine ait olduğunu sadece TEK BİR KELİME ile cevapla.
 Duygular: happy, sad, angry, think, surprised, awkward, curious, neutral
 
 Metin: "{request.text}"
 Duygu:"""
-        
-        response = await model.generate_content_async(prompt)
-        emotion = response.text.strip().lower()
+        response = await client.aio.models.generate_content(
+            model=settings.GEMINI_CHAT_MODEL,
+            contents=prompt,
+        )
+        raw = response.text
+        emotion = raw.strip().lower() if raw else "neutral"
         
         # Geçerli olmayan bir duygu dönerse nötre düşür
         valid_emotions = ["happy", "sad", "angry", "think", "surprised", "awkward", "curious", "neutral"]

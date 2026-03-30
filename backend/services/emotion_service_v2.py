@@ -102,15 +102,29 @@ async def analyze_sentiment_v2(text: str) -> str:
         return "neutral"
 
     try:
-        results = pipe(text[:512])  # Model max 512 token alır
-        if results:
-            top = results[0]
-            if isinstance(top, list):
-                top = top[0]
-            label = top.get("label", "neutral").lower()
-            emotion = _SENTIMENT_TO_EMOTION.get(label, "neutral")
-            print(f"[EMOTION] Transformer → label={label}, emotion={emotion}")
-            return emotion
+        raw = pipe(text[:512])  # Model max 512 token alır
+        if not raw:
+            return "neutral"
+        # Stublar bazen dict döner gibi; çalışma zamanında genelde list
+        if isinstance(raw, list):
+            first = raw[0]
+        elif isinstance(raw, dict):
+            first = raw
+        else:
+            return "neutral"
+        # Tek giriş: [[{label, score}, ...]] veya [{label, score}] (sürüme göre değişir)
+        if isinstance(first, list) and len(first) > 0:
+            top = first[0]  # type: ignore
+        elif isinstance(first, dict):
+            top = first
+        else:
+            return "neutral"
+        if not isinstance(top, dict):
+            return "neutral"
+        label = str(top.get("label", "neutral")).lower()
+        emotion = _SENTIMENT_TO_EMOTION.get(label, "neutral")
+        print(f"[EMOTION] Transformer → label={label}, emotion={emotion}")
+        return emotion
     except Exception as e:
         print(f"[EMOTION] Transformer hatası: {e}")
 

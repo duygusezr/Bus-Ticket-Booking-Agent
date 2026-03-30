@@ -11,7 +11,7 @@ from services.tts_service import generate_tts
 from services.emotion_service_v2 import analyze_sentiment_v2
 from services.semantic_cache_service import semantic_cache
 from config import settings
-from services.tools import validate_seat_selection
+from services.tools import validate_seat_selection, validate_phone_number, validate_email_address
 
 router = APIRouter()
 
@@ -28,6 +28,22 @@ def _extract_last_assistant_text(history: List[Dict[str, str]]) -> str:
             return str(msg.get("content", "") or "")
     return ""
 
+def _append_sefer_id_context(text: str, history: List[Dict[str, str]]) -> str:
+    """
+    Oluşabilecek unutkanlıkları (context loss) önlemek için, kullanıcının
+    her mesajının sonuna görünmez bir SİSTEM BİLGİSİ olarak aktif sefer_id'yi fısıldar.
+    Bu, LLM'in özet metninden sonra 'onaylıyorum' dendiğinde sefer_id'yi bilmesini sağlar.
+    """
+    latest_sefer_id = None
+    for m in history:
+        match = re.search(r"Sefer\s*[_]?ID[:=\s]*(\d+)", str(m.get("content", "")), flags=re.IGNORECASE)
+        if match:
+            latest_sefer_id = match.group(1)
+            
+    if latest_sefer_id and "Aktif sefer_id=" not in text:
+        return text + f" [SİSTEM BİLGİSİ: Aktif sefer_id={latest_sefer_id}]"
+    return text
+
 
 def _try_direct_seat_validation(text: str, history: List[Dict[str, str]]) -> Optional[str]:
     """
@@ -39,12 +55,17 @@ def _try_direct_seat_validation(text: str, history: List[Dict[str, str]]) -> Opt
     if not user_text:
         return None
 
-    last_assistant = _extract_last_assistant_text(history)
-    if not last_assistant:
-        return None
+    # Geriye dönük son 3-4 mesajda 'Boş koltuklar:' veya 'Uygun koltuklar:' ara
+    available_seats = None
+    for msg in reversed(history or []):
+        if msg.get("role") == "assistant":
+            content = str(msg.get("content", ""))
+            seat_list_match = re.search(r"(?:Boş koltuklar|Uygun koltuklar|Boş olan şu koltuklardan birini seçin):\s*([0-9,\s]+)", content, flags=re.IGNORECASE)
+            if seat_list_match:
+                available_seats = seat_list_match.group(1).strip()
+                break
 
-    seat_list_match = re.search(r"Boş koltuklar:\s*([0-9,\s]+)", last_assistant, flags=re.IGNORECASE)
-    if not seat_list_match:
+    if not available_seats:
         return None
 
     # Only short seat-like inputs should use this guardrail path.
@@ -52,8 +73,77 @@ def _try_direct_seat_validation(text: str, history: List[Dict[str, str]]) -> Opt
     if not re.fullmatch(r"[0-9]{1,2}|[a-zA-ZçğıöşüÇĞİÖŞÜ\s]{2,12}", user_text):
         return None
 
-    available_seats = seat_list_match.group(1).strip()
     return validate_seat_selection(user_text, available_seats)
+
+
+def _try_direct_phone_validation(text: str, history: List[Dict[str, str]]) -> Optional[str]:
+    """
+    Deterministic phone validation shortcut.
+    Bot son mesajında telefon istiyorsa, LLM'yi beklemeden doğrudan doğrula.
+    """
+    user_text = (text or "").strip()
+    if not user_text:
+        return None
+
+    last_assistant = _extract_last_assistant_text(history)
+    if not last_assistant:
+        return None
+
+    last_lower = last_assistant.lower()
+
+    # Bot telefon sordu mu?
+    phone_keywords = ["telefon", "cep num", "05xx"]
+    if not any(kw in last_lower for kw in phone_keywords):
+        return None
+
+    # Kullanıcı girişi telefon numarasına benziyor mu?
+    clean = re.sub(r"[^0-9]", "", user_text)
+    
+    # Telefon numarası:
+    # 10 haneli ise '5' ile başlamalı
+    # 11 haneli ise '0' ile başlamalı
+    # 12+ hane ise (ülke kodlu) '+90' vb.
+    if len(clean) < 10 or len(clean) > 13:
+        return None
+        
+    if len(clean) == 10 and not clean.startswith("5"):
+        return None
+    if len(clean) == 11 and not (clean.startswith("0") or clean.startswith("9")):
+        return None
+
+    print(f"[DIRECT PHONE] Input: '{user_text}' -> Digits: '{clean}'")
+    return validate_phone_number(user_text)
+
+
+def _try_direct_email_validation(text: str, history: List[Dict[str, str]]) -> Optional[str]:
+    """
+    Deterministic email validation shortcut.
+    Bot son mesajında email istiyorsa, LLM'yi beklemeden doğrudan doğrula.
+    """
+    user_text = (text or "").strip()
+    if not user_text:
+        return None
+
+    last_assistant = _extract_last_assistant_text(history)
+    if not last_assistant:
+        return None
+
+    # Bot email sordu mu?
+    email_keywords = ["e-posta", "eposta", "email", "mail adres"]
+    last_lower = last_assistant.lower()
+    if not any(kw.lower() in last_lower for kw in email_keywords):
+        return None
+
+    # Kullanıcı girişi email'e benziyor mu? (@ varsa veya sesli email kalıpları)
+    has_at = "@" in user_text
+    has_voice_at = any(w in user_text.lower().split() for w in ["at", "et"])
+    has_domain = any(d in user_text.lower() for d in ["gmail", "mail", "hotmail", "yahoo", "outlook", "nokta", "com"])
+
+    if not (has_at or has_voice_at or has_domain):
+        return None
+
+    print(f"[DIRECT EMAIL] Input: '{user_text}'")
+    return validate_email_address(user_text)
 
 @router.post("/api/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -63,12 +153,33 @@ async def chat_endpoint(request: ChatRequest):
         t_start = time.perf_counter()
         lang = request.lang or settings.DEFAULT_LANG
 
+        system_injection = ""
         direct_seat_response = _try_direct_seat_validation(request.text, request.history)
         if direct_seat_response:
-            print(f"--- [REST DIRECT SEAT] --- TOTAL: {time.perf_counter() - t_start:.3f}s")
-            return {"text": direct_seat_response, "audio": await generate_tts(direct_seat_response, lang), "emotion": "relaxed"}
+            system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_seat_response}]"
 
-        cached_match = semantic_cache.search(request.text)
+        direct_phone_response = _try_direct_phone_validation(request.text, request.history)
+        if direct_phone_response:
+            system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_phone_response}]"
+
+        direct_email_response = _try_direct_email_validation(request.text, request.history)
+        if direct_email_response:
+            latest_sefer_id = None
+            for m in request.history:
+                match = re.search(r"Sefer_ID:\s*(\d+)", m.get("content", ""))
+                if match:
+                    latest_sefer_id = match.group(1)
+                    
+            if latest_sefer_id:
+                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya tüm bilgilerin (Güzergah, vb.) net bir ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon aracı kullanma! Onay sonrasına hazırlık için sefer_id={latest_sefer_id} değerini kullanacağını unutma.]"
+            else:
+                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya bilgilerin ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon yapma!]"
+
+        # LLM'in bu sonucu görüp bir sonraki adımı otomatik sorması için metne ekle
+        processed_text = request.text + system_injection
+        processed_text = _append_sefer_id_context(processed_text, request.history)
+
+        cached_match = semantic_cache.search(processed_text)
         if cached_match:
             print(f"--- [REST CHAT SEMANTIC HIT] --- TOTAL: {time.perf_counter() - t_start:.3f}s")
             return {
@@ -78,7 +189,7 @@ async def chat_endpoint(request: ChatRequest):
             }
 
         # Gemini ile yanıt üret (tool calling + doğal dil tek adımda)
-        response_text = await generate_chat_response(request.text, request.history, lang)
+        response_text = await generate_chat_response(processed_text, request.history, lang)
         t_llm = time.perf_counter()
 
         audio_base64 = await generate_tts(response_text, lang)
@@ -87,7 +198,7 @@ async def chat_endpoint(request: ChatRequest):
         emotion = await analyze_sentiment_v2(response_text)
         t_emo = time.perf_counter()
 
-        semantic_cache.add(request.text, response_text, audio_base64, emotion)
+        semantic_cache.add(processed_text, response_text, audio_base64, emotion)
 
         print(f"--- [REST LATENCY] --- LLM: {t_llm-t_start:.3f}s | TTS: {t_tts-t_llm:.3f}s | TOTAL: {t_emo-t_start:.3f}s")
         return {"text": response_text, "audio": audio_base64, "emotion": emotion}
@@ -116,18 +227,34 @@ async def websocket_chat(websocket: WebSocket):
             import time
             t_ws_start = time.perf_counter()
 
+            system_injection = ""
             direct_seat_response = _try_direct_seat_validation(text, history)
             if direct_seat_response:
-                await websocket.send_json({"type": "text", "content": direct_seat_response})
-                audio_base64 = await generate_tts(direct_seat_response, lang)
-                await websocket.send_json({"type": "audio", "content": audio_base64})
-                await websocket.send_json({"type": "emotion", "content": "relaxed"})
-                await websocket.send_json({"type": "done"})
-                print(f"[WS DIRECT SEAT] Time: {time.perf_counter() - t_ws_start:.3f}s")
-                continue
+                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_seat_response}]"
+
+            direct_phone_response = _try_direct_phone_validation(text, history)
+            if direct_phone_response:
+                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_phone_response}]"
+
+            direct_email_response = _try_direct_email_validation(text, history)
+            if direct_email_response:
+                # Olası context kopmalarını (unutkanlığı) engellemek için sefer_id'yi bulup hatırlat
+                latest_sefer_id = None
+                for m in history:
+                    match = re.search(r"Sefer_ID:\s*(\d+)", m.get("content", ""))
+                    if match:
+                        latest_sefer_id = match.group(1)
+                
+                if latest_sefer_id:
+                    system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya tüm bilgilerin (Güzergah, vb.) net bir ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon aracı kullanma! Onay sonrasına hazırlık için sefer_id={latest_sefer_id} değerini kullanacağını unutma.]"
+                else:
+                    system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya bilgilerin ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon yapma!]"
+
+            processed_text = text + system_injection
+            processed_text = _append_sefer_id_context(processed_text, history)
 
             # 0. Semantic Cache
-            cached_ws_match = semantic_cache.search(text)
+            cached_ws_match = semantic_cache.search(processed_text)
             if cached_ws_match:
                 await websocket.send_json({"type": "text", "content": cached_ws_match["text"]})
                 await websocket.send_json({"type": "audio", "content": cached_ws_match["audio"]})
@@ -137,7 +264,7 @@ async def websocket_chat(websocket: WebSocket):
                 continue
 
             # 1. Kullanıcı duygu analizi
-            user_msg_emotion = await analyze_sentiment_v2(text)
+            user_msg_emotion = await analyze_sentiment_v2(processed_text)
             print(f"[WS] User Emotion Latency: {time.perf_counter() - t_ws_start:.3f}s")
             await websocket.send_json({"type": "emotion", "content": user_msg_emotion})
 
@@ -146,7 +273,7 @@ async def websocket_chat(websocket: WebSocket):
                 t_llm_start = time.perf_counter()
                 
                 full_response = ""
-                async for chunk in generate_chat_response_stream(text, history, lang):
+                async for chunk in generate_chat_response_stream(processed_text, history, lang):
                     full_response += chunk
                     await websocket.send_json({"type": "text", "content": chunk})
                 
@@ -169,7 +296,7 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_json({"type": "audio", "content": audio_base64})
                 await websocket.send_json({"type": "emotion", "content": bot_msg_emotion})
 
-                semantic_cache.add(text, full_response, audio_base64, bot_msg_emotion)
+                semantic_cache.add(processed_text, full_response, audio_base64, bot_msg_emotion)
 
                 await websocket.send_json({"type": "done"})
 

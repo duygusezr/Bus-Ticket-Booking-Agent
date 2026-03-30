@@ -46,7 +46,8 @@ def _summarize(session: dict, session_id: str):
             model=settings.GEMINI_CHAT_MODEL,
             contents=prompt,
         )
-        session["summary"] = response.text.strip()
+        text = response.text
+        session["summary"] = text.strip() if text else ""
         session["buffer"] = []
         print(f"[MEMORY] Özet güncellendi ({session_id}): {len(session['summary'])} karakter")
     except Exception as e:

@@ -100,24 +100,34 @@ class SemanticCache:
 
     def search(self, query: str) -> Optional[Dict[str, Any]]:
         """Searches for a similar query in the cache."""
+        import re
+        clean_query = re.sub(r"\[SİSTEM BİLGİSİ.*?\]", "", query).strip()
+        
         if not self.cache:
             return None
             
         t0 = time.perf_counter()
-        # BUG FIX: self.model.model.encode -> self.model.encode
-        query_vector = self.model.encode(query, convert_to_numpy=True)
+        query_vector = self.model.encode(clean_query, convert_to_numpy=True)
         
         best_match = None
         highest_score = -1.0
         
+        # Calculate cosine similarity against all cached items
+        if len(self.cache) > 0:
+            for item in self.cache:
+                score = np.dot(query_vector, item["vector"]) / (np.linalg.norm(query_vector) * np.linalg.norm(item["vector"]) + 1e-9)
+                if score > highest_score:
+                    highest_score = float(score)
+                    best_match = item["data"]
+        
         t1 = time.perf_counter()
         
         # Sayısal ağırlıklı girdiler için bypass (TC, Koltuk, ID vb.)
-        digit_count = sum(c.isdigit() for c in query)
-        is_mostly_digits = digit_count > (len(query) / 2) if len(query) > 0 else False
+        digit_count = sum(c.isdigit() for c in clean_query)
+        is_mostly_digits = digit_count > (len(clean_query) / 2) if len(clean_query) > 0 else False
         
         if is_mostly_digits:
-            print(f"[SEMANTIC CACHE] BYPASS: Input is mostly digits ({query})")
+            print(f"[SEMANTIC CACHE] BYPASS: Input is mostly digits ({clean_query})")
             return None
             
         if highest_score >= self.threshold:
@@ -129,8 +139,11 @@ class SemanticCache:
 
     def add(self, query: str, text: str, audio: str, emotion: str):
         """Adds a new query-response pair to the cache."""
+        import re
+        clean_query = re.sub(r"\[SİSTEM BİLGİSİ.*?\]", "", query).strip()
+        
         # Avoid duplicate (or very close) adds
-        if self.search(query) is not None:
+        if self.search(clean_query) is not None:
             return
 
         # Cache max boyutuna ulaşıldıysa en eski kaydı sil (FIFO)
@@ -138,7 +151,7 @@ class SemanticCache:
             self.cache.pop(0)
             print(f"[SEMANTIC CACHE] Max boyuta ulaşıldı ({self.max_items}), en eski kayıt silindi.")
             
-        embedding = self.model.encode(query, convert_to_numpy=True)
+        embedding = self.model.encode(clean_query, convert_to_numpy=True)
         new_data = {
             "text": text,
             "audio": audio,

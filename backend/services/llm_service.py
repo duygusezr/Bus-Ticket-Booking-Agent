@@ -58,7 +58,7 @@ async def generate_chat_response(text: str, history: List[Dict[str, str]], lang:
             history=gemini_history
         )
         response = await chat.send_message(text)
-        result_text = response.text
+        result_text = response.text or ""
         update_memory(text, result_text, session_id)
         return result_text
     except Exception as e:
