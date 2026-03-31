@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 # Çalışma dizini
-WORKDIR /app
+WORKDIR /app/backend
 
 # Sistem bağımlılıkları (ses işleme için gerekli olabilecekler)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./
 
 # Veritabanı ve veri dosyalarını kopyala
-COPY database/ ./database/
+COPY database/ ../database/
 
 # PORT ortam değişkeni Railway tarafından otomatik atanır
 ENV PORT=8001
