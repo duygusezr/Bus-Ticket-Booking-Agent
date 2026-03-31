@@ -621,7 +621,7 @@ function initWebSocket() {
     if (chatSocket && (chatSocket.readyState === WebSocket.OPEN || chatSocket.readyState === WebSocket.CONNECTING)) return;
 
     isReconnecting = false;
-    chatSocket = new WebSocket(`${WS_BASE}/ws`);
+    chatSocket = new WebSocket(`${WS_BASE}/ws/chat`);
 
     chatSocket.onopen = () => {
         console.log("WebSocket bağlantısı başarılı.");
