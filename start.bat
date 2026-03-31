@@ -15,7 +15,7 @@ start "ELA Backend" cmd /k "chcp 65001 >nul && cd /d "%PROJECT_DIR%backend" && .
 timeout /t 3 /nobreak >nul
 
 echo [2/2] Frontend baslatiliyor... (Port: 3000)
-start "ELA Frontend" cmd /k "cd /d "%PROJECT_DIR%" && python -m http.server 3000"
+start "ELA Frontend" cmd /k "cd /d "%PROJECT_DIR%frontend" && python -m http.server 3000"
 
 echo.
 echo Tum servisler hazir!

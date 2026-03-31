@@ -18,8 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./
 
 # Veritabanı ve veri dosyalarını kopyala
-COPY bilet_sistemi.db ./bilet_sistemi.db
-COPY rezervasyonlar.db ./rezervasyonlar.db
+COPY database/ ./database/
 
 # PORT ortam değişkeni Railway tarafından otomatik atanır
 ENV PORT=8001

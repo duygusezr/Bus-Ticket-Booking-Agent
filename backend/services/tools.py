@@ -10,11 +10,11 @@ from pathlib import Path
 
 # DB ve CSV dosya yolları
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "bilet_sistemi.db"
-CSV_PATH = BASE_DIR / "bilet_sistemi.csv"
+DB_PATH = BASE_DIR / "database" / "bilet_sistemi.db"
+CSV_PATH = BASE_DIR / "database" / "bilet_sistemi.csv"
 
-REZ_DB_PATH = BASE_DIR / "rezervasyonlar.db"
-REZ_CSV_PATH = BASE_DIR / "backend" / "rezervasyonlar.csv"
+REZ_DB_PATH = BASE_DIR / "database" / "rezervasyonlar.db"
+REZ_CSV_PATH = BASE_DIR / "database" / "rezervasyonlar.csv"
 
 def init_db():
     # --- 1. SEFERLER VERİTABANI (bilet_sistemi.db) ---

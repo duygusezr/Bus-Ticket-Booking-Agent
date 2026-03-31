@@ -327,14 +327,19 @@ Uzun konuşmalarda Gemini'nin token bağlam penceresi dolabilir. Bu sorunu çöz
 
 ```text
 Bus Ticket Booking Agent/
-├── index.html                  # Ana frontend sayfası
-├── main.js                     # 3D avatar, WebSocket, UI mantığı
-├── style.css                   # Arayüz stilleri
-├── ela_avatar.png              # Chat baloncuğu avatar ikonu
-├── models/
-│   └── character.vrm           # 3D karakter modeli (VRM 1.0)
-├── bilet_sistemi.db            # Sefer veritabanı (SQLite)
-├── rezervasyonlar.db           # Rezervasyon veritabanı (SQLite)
+├── frontend/                   # Ön yüz klasörü
+│   ├── index.html              # Ana frontend sayfası
+│   ├── main.js                 # 3D avatar, WebSocket, UI mantığı
+│   ├── style.css               # Arayüz stilleri
+│   ├── ela_avatar.png          # Chat baloncuğu avatar ikonu
+│   ├── house_bg.jpg            # Arka plan resmi
+│   └── models/
+│       └── character.vrm       # 3D karakter modeli (VRM 1.0)
+├── database/                   # Veritabanı ve CSV dosyaları
+│   ├── bilet_sistemi.db        # Sefer veritabanı (SQLite)
+│   ├── rezervasyonlar.db       # Rezervasyon veritabanı (SQLite)
+│   ├── bilet_sistemi.csv       # Sefer yedek dosyası (CSV)
+│   └── rezervasyonlar.csv      # Rezervasyon yedek dosyası (CSV)
 ├── start.bat                   # Tek tıkla başlatma scripti
 │
 └── backend/
