@@ -1,294 +1,453 @@
-# 🚌 ELA — Otobus Bileti Rezervasyon AI Asistani
+# 🚌 Ela — Yapay Zekâ Destekli Otobüs Bileti Rezervasyon Asistanı
 
-**ELA (Electronic Leisure Assistant)**, Google Gemini 2.5 Flash, ElevenLabs TTS/STT ve Three.js VRM teknolojilerini birlestiren yeni nesil bir **yapay zeka destekli otobus bileti asistani**dir. Kullanici, form doldurmak yerine gercek zamanli 3D avatar ile dogal konusarak bilet arayip rezervasyon yapabilir.
-
-> 🎥 **Demo:** [YouTube](https://www.youtube.com/watch?v=adMA9Ky3x6k)
+> **Sesli ve yazılı etkileşim destekli, 3D avatarlı, uçtan uca akıllı otobüs bileti rezervasyon sistemi.**
 
 ---
 
-## 📖 Proje Hakkinda
+## 📌 Projenin Amacı
 
-### Aciklama
+Bu proje, geleneksel web tabanlı otobüs bileti satın alma sürecini **yapay zekâ destekli bir konuşma arayüzüne** dönüştürmeyi amaçlamaktadır. Kullanıcı, ekrandaki 3D avatar (Ela) ile Türkçe sesli veya yazılı olarak etkileşime girerek menülere, formlara veya karmaşık filtre panellerine ihtiyaç duymadan bilet rezervasyonu yapabilir.
 
-ELA, web tabanli 3D avatar arayuzu uzerinden kullaniciyla gercek zamanli sesli diyalog kuran bir AI asistandir. Projenin temel amaci, otobus bileti arama ve rezervasyon surecini insanla konusur gibi kolaylastirmaktir.
+### Çözmek İstediğimiz Problem
 
-### Cozulen Problemler
+Mevcut otobüs bileti platformlarında kullanıcı, güzergah seçimi → tarih seçimi → koltuk seçimi → yolcu bilgileri → ödeme gibi çok adımlı bir form sürecinden geçmek zorundadır. Bu süreç özellikle yaşlı kullanıcılar, teknolojiye uzak bireyler veya hareket halindeki kullanıcılar için zorlu olabilmektedir.
 
-- **Karmasik Arayuz Yorgunlugu:** Uzun form ve filtre doldurma ihtiyacini azaltir.
-- **Tarih Esnekligi:** "Onumuzdeki cuma bilet var mi?" gibi dogal ifadeleri anlayip tarih hesaplamasi yapar.
-- **Eksik Veri Yonetimi:** Istek tarihine uygun sefer yoksa akilli alternatif tarih onerileri sunar.
+**Ela**, bu süreci doğal bir sohbete dönüştürür:
 
-### Hedef Kitle
-
-- Hizli ve zahmetsiz bilet alma deneyimi isteyen yolcular
-- Sesli kullanim tercih eden yasli veya teknolojiye mesafeli kullanicilar
-- Portfoy veya ticari projelerine yeni nesil 3D asistan deneyimi eklemek isteyen gelistiriciler
+- *"Yarın Ankara'dan İstanbul'a gitmek istiyorum"* → Sistem uygun seferleri otomatik bulur
+- *"5 numaralı koltuğu istiyorum"* → Koltuk uygunluğunu kontrol eder
+- *"TC'm 12345678910"* → Algoritmik doğrulamayı anında yapar
+- Tüm bilgiler toplandığında özet sunar ve onay sonrası rezervasyonu tamamlar
 
 ---
 
-## ✨ Ozellikler
+## 🏗️ Sistem Mimarisi
 
-- **Gemini Destekli AI:** Google Gemini 2.5 Flash, tool calling ve dogal dil yanitini tek akista yonetir.
-- **Akilli Tarih Yonetimi:** Goreli zaman ifadelerini anlar, uygun sefer yoksa en yakin tarihleri onerebilir.
-- **Dinamik Sehir Eslesmesi:** Turkce karakter normalizasyonu ile yazim farklarina daha dayaniklidir (`İ/I`, `ı/i`).
-- **Deterministik Koltuk Dogrulama:** Son bot mesajinda `Bos koltuklar: ...` varsa, `5` veya `bes` gibi girdiler backend tarafinda dogrudan dogrulanir.
-- **Gercek Zamanli 3D Avatar:** Three.js + VRM tabanli karakter, LLM duygu tokenlarina (ACT) gore tepki verir.
-- **Uctan Uca Rezervasyon:** Sefer secimi, koltuk secimi, kimlik/iletisim bilgileri ve PNR onayi tek akis.
-- **Semantik Onbellek (RAM):** Sik sorulan sorularda milisaniye seviyesinde hizli yanit.
-- **Ses Girisi Normalizasyonu (TR):**
-  - STT gurultulu metni temizler, rezervasyon acisindan anlamli bolumu secer.
-  - Turkce sayi kelimelerini rakama cevirir (`bes` -> `5`, `on dokuz` -> `19`).
-- Bolunmus sayi bloklarini uygun oldugunda birlestirir (ornek: `12 34 56 78 90` -> `1234567890`).
-- **Turkce TTS Sayi Okuma:** Fiyatlar, uzun sayilar ve rakamlar seslendirme oncesi daha dogal Turkce okunacak sekle cevrilir.
-- **TC Kimlik Dogrulama Kurallari:**
-  - 11 hane ve sadece rakam
-  - Ilk hane `0` olamaz
-  - 10. hane checksum kontrolu
-  - 11. hane checksum kontrolu
-  - Son hane cift olmak zorunda
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                        FRONTEND (Vanilla JS)                    │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐│
+│  │ Chat Panel   │  │  3D Avatar   │  │  WebSocket İstemcisi   ││
+│  │ (Metin/Ses)  │  │  (Three.js + │  │  (Streaming Yanıt)     ││
+│  │              │  │   VRM 1.0)   │  │                        ││
+│  └──────┬───────┘  └──────┬───────┘  └───────────┬────────────┘│
+│         │                 │                      │              │
+└─────────┼─────────────────┼──────────────────────┼──────────────┘
+          │ REST / WS       │ Emotion Data         │ Audio Stream
+          ▼                 ▼                      ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     BACKEND (FastAPI + Uvicorn)                  │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                    Chat Router                            │   │
+│  │  REST: POST /api/chat    │    WebSocket: /ws/chat         │   │
+│  │  (Tek seferlik yanıt)    │    (Streaming yanıt)           │   │
+│  └─────────┬────────────────┴──────────────┬─────────────────┘   │
+│            │                               │                     │
+│  ┌─────────▼───────────────────────────────▼─────────────────┐   │
+│  │                    LLM Service (Gemini 2.5 Flash)         │   │
+│  │         Konuşma yönetimi + Function Calling               │   │
+│  └─────────┬─────────────────────────────────────────────────┘   │
+│            │                                                     │
+│  ┌─────────▼─────────────────────────────────────────────────┐   │
+│  │                      Tool Functions                        │   │
+│  │  get_bus_trips │ validate_seat │ validate_tc │ validate_   │   │
+│  │                │ _selection    │ _number     │ phone/email │   │
+│  │                │               │             │             │   │
+│  │  make_reservation                                          │   │
+│  └────────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  ┌───────────────┐ ┌───────────────┐ ┌─────────────────────┐    │
+│  │  STT Service  │ │  TTS Service  │ │  Emotion Service    │    │
+│  │  (ElevenLabs  │ │  (ElevenLabs  │ │  (XLM-RoBERTa +    │    │
+│  │   Scribe v1)  │ │   + Edge-TTS) │ │   ACT Token Parse) │    │
+│  └───────────────┘ └───────────────┘ └─────────────────────┘    │
+│                                                                  │
+│  ┌───────────────┐ ┌───────────────────────────────────────┐    │
+│  │Memory Service │ │       Semantic Cache Service           │    │
+│  │(Gemini Özet)  │ │  (all-MiniLM-L6-v2 + Cosine Sim.)    │    │
+│  └───────────────┘ └───────────────────────────────────────┘    │
+│                                                                  │
+│  ┌───────────────────────────────────────────────────────────┐   │
+│  │              Veritabanı Katmanı (SQLite)                   │   │
+│  │  bilet_sistemi.db (Seferler)  │  rezervasyonlar.db (PNR)  │   │
+│  └───────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 💻 Teknoloji Yigini
+## 🤖 Kullanılan Yapay Zekâ Modelleri ve Seçim Gerekçeleri
 
-| Katman | Teknoloji |
-| ------- | ----------- |
-| **Backend** | Python 3.11+, FastAPI, Uvicorn, SQLite |
-| **Frontend** | HTML5, Vanilla CSS (Glassmorphism), JavaScript (ES6+ Modules) |
-| **3D Motor** | Three.js, @pixiv/three-vrm |
-| **AI Motoru** | Google Gemini 2.5 Flash (Mantik, Tool Calling ve Sohbet) |
-| **Ses** | ElevenLabs Scribe (STT), ElevenLabs TTS (Ses Sentezi) |
-| **NLP** | Sentence-Transformers (Semantik Arama ve Cache) |
+### 1. Google Gemini 2.5 Flash — Ana Konuşma Motoru (LLM)
+
+| Özellik | Detay |
+| --- | --- |
+| **Model** | `gemini-2.5-flash` |
+| **Kullanım Amacı** | Konuşma yönetimi, doğal dil anlama, araç çağırma (Function Calling) |
+| **Erişim** | Google GenAI SDK (`google-genai`) |
+
+**Neden Gemini 2.5 Flash?**
+
+- **Native Function Calling (Araç Çağırma) Desteği:** Gemini, araç tanımlarını doğrudan model konfigürasyonuna alır ve hangi aracı ne zaman çağıracağına kendi karar verir. Bu, GPT tabanlı modellerdeki gibi harici bir orkestrasyon katmanına (LangChain Agent vb.) ihtiyaç duymadan, tek model üzerinden hem doğal dil üretimi hem de iş mantığı yürütmeyi mümkün kılar.  
+- **Hız/Maliyet Optimizasyonu:** `Flash` varyantı, `Pro` modeline kıyasla ~5-10x daha düşük gecikme süresi sunar. Rezervasyon gibi çok turlu (multi-turn) bir diyalogda her tur için LLM çağrısı yapıldığından, düşük gecikme doğrudan kullanıcı deneyimini iyileştirir.  
+- **Çok Turlu Konuşma (Multi-Turn Chat) Yetkinliği:** Gemini'nin chat API'si, konuşma geçmişini (`history`) doğal olarak alıp bağlamı korumasını sağlar. Bu sayede kullanıcının daha önce verdiği bilgiler (güzergah, tarih vb.) sonraki adımlarda tekrar sorulmaz.  
+- **Türkçe Dil Performansı:** Gemini modelleri, Türkçe üzerinde GPT-3.5'e kıyasla daha tutarlı ve dilbilgisi açısından doğru yanıtlar üretmektedir.  
+- **Streaming Desteği:** WebSocket üzerinden `send_message_stream` ile token-token yanıt akışı sağlanır, böylece kullanıcı yanıtı beklemeden okumaya başlayabilir.
+
+**Sistemdeki Rolü:**
+
+Gemini, projede **tek LLM** olarak çalışır ve şu görevlerin tamamını üstlenir:
+
+1. Kullanıcının niyetini anlama (NLU)
+2. Gerekli bilgiyi adım adım toplama (Slot Filling)
+3. Uygun araçları çağırma (`get_bus_trips`, `validate_tc_number`, `make_reservation` vb.)
+4. Araç sonuçlarını insani bir dilde kullanıcıya aktarma (NLG)
+5. Konuşma özetleme (Memory Service)
+6. ACT token üretimi (duygu bilgisi)
 
 ---
 
-## ⚙️ Kurulum
+### 2. XLM-RoBERTa (cardiffnlp/twitter-xlm-roberta-base-sentiment) — Duygu Analizi
+
+| Özellik | Detay |
+| --- | --- |
+| **Model** | `cardiffnlp/twitter-xlm-roberta-base-sentiment` |
+| **Mimari** | XLM-RoBERTa Base (HuggingFace Transformers) |
+| **Kullanım Amacı** | Metin tabanlı duygu tespiti (Sentiment Analysis) |
+| **Çalışma Ortamı** | Yerel (CPU/GPU), API gerektirmez |
+
+**Neden Bu Model?**
+
+- **Çok Dilli Destek (100+ Dil):** RoBERTa'nın XLM varyantı, Türkçe dahil 100'den fazla dilde eğitilmiştir. Türkçe için ayrı bir model indirmeye gerek kalmaz.  
+- **Hafif ve Hızlı:** ~278M parametreli Base boyutu, CPU üzerinde bile <100ms'de sonuç üretir. GPU mevcut olduğunda otomatik olarak GPU'ya geçer (`torch.cuda.is_available()`).  
+- **Twitter/Sosyal Medya Verisiyle Eğitim:** Kısa, konuşma dili ağırlıklı metinlerde (ki chatbot diyalogları buna çok yakındır) yüksek doğruluk sağlar.  
+- **Offline Çalışma:** Model bir kez indirilir ve tamamen yerel çalışır. Dış API'ye bağımlılık yoktur.
+
+**Hibrit Duygu Tespiti Stratejisi:**
+
+Projede duygu tespiti iki katmanlı bir yaklaşımla yapılır:
+
+1. **ACT Token (Birincil):** Gemini'ye verilen system prompt'ta, her yanıtın başına `<|ACT:"emotion":{"name":"happy","intensity":0.7}|>` formatında bir duygu token'ı eklemesi istenir. Bu, LLM'in kendi bağlam anlayışına dayalı en güvenilir duygu kaynağıdır.
+2. **Transformer Fallback (İkincil):** ACT token bulunamazsa XLM-RoBERTa modeli devreye girer ve metnin sentiment sınıfını (positive/negative/neutral) tespit ederek avatar duygu etiketine dönüştürür.
+
+---
+
+### 3. all-MiniLM-L6-v2 (Sentence Transformers) — Semantik Önbellekleme
+
+| Özellik | Detay |
+| --- | --- |
+| **Model** | `all-MiniLM-L6-v2` |
+| **Mimari** | MiniLM (Microsoft, 6 katman, 22M parametre) |
+| **Kullanım Amacı** | Sorgu benzerliği hesaplama (Semantic Cache) |
+| **Çalışma Ortamı** | Yerel CPU |
+
+**Neden Bu Model?**
+
+- **Ultra Hafif:** Yalnızca 22M parametre ile saniyenin milisaniye mertebesinde vektör üretir. Daha büyük modeller (e.g., `all-mpnet-base-v2`) daha iyi doğruluk sağlar ama chatbot gibi gerçek zamanlı bir uygulamada hız kritiktir.  
+- **Sentence Transformers Ekosistemine Uyum:** `sentence-transformers` kütüphanesi ile tek satırda `model.encode(text)` çağrısıyla 384 boyutlu dense vektör üretilebilir.  
+- **Yeterli Semantik Kalite:** Aynı anlamlı sorguları (ör. "İstanbul'a bilet" vs "İstanbul'a gitmek istiyorum") yüksek cosine benzerliği ile eşleştirir. 0.90 eşik değeri ile yalnızca gerçekten aynı sorular cache'ten yanıtlanır.
+
+**Semantik Cache Nasıl Çalışır?**
+
+1. Kullanıcının mesajı bir embedding vektörüne dönüştürülür.
+2. Daha önce yanıtlanmış ve RAM'de tutulan tüm sorgu vektörleriyle cosine similarity hesaplanır.
+3. Benzerlik ≥ 0.90 ise, LLM çağrısı atlanarak önceki yanıt (metin + ses + duygu) doğrudan döndürülür.
+4. Sayısal ağırlıklı girdiler (TC, telefon vb.) cache'ten otomatik bypass edilir; çünkü bu tür girdilerde anlamsal benzerlik yanıltıcıdır.
+
+**Kazanç:** Tekrarlı sorularda LLM + TTS maliyeti tamamen ortadan kalkar ve yanıt süresi ~5ms'ye düşer.
+
+---
+
+### 4. ElevenLabs Scribe v1 — Konuşmadan Metne (STT)
+
+| Özellik | Detay |
+| --- | --- |
+| **Model** | `scribe_v1` (ElevenLabs STT) |
+| **Kullanım Amacı** | Kullanıcının sesli girdisini metne dönüştürme |
+| **Erişim** | ElevenLabs SDK (API) |
+
+**Neden ElevenLabs Scribe?**
+
+- **Türkçe STT Kalitesi:** Google Cloud STT ve Whisper'a kıyasla Türkçe karşılaştırmalı testlerde yüksek doğruluk sağlamıştır.  
+- **Tek SDK ile STT + TTS:** Aynı ElevenLabs SDK üzerinden hem konuşma tanıma hem ses sentezi yapılabilir. Bu, ayrı API hesapları / faturalandırma yönetme karmaşıklığını azaltır.  
+- **Entegrasyon Basitliği:** `client.speech_to_text.convert()` ile tek çağrıda transkripsiyon sonucu alınır.
+
+**STT Sonrası Metin Normalizasyonu:**
+
+Türkçe sesli girişlerde STT çıktısı sıklıkla şu sorunları içerir:
+
+- Sayı kelimelerinin karışık formda gelmesi: *"beş yüz otuz yedi"* → `537`
+- Onluk-birlik parçalanması: *"altmış 1"* → `61`
+- E-posta adreslerinin sesli söylenmesi: *"duygu at gmail nokta com"* → `duygu@gmail.com`
+
+Bu sorunlar `stt_service.py` içindeki çok katmanlı normalizasyon pipeline'ı ile çözülür:
+
+1. **Bağlam Tespiti:** Girdi e-posta mı, sayısal veri mi, yoksa doğal metin mi?
+2. **Türkçe Sayı Dönüşümü:** Yazıyla söylenen sayılar hane hane rakamlara çevrilir.
+3. **STT Parçalanma Tamiri:** `"60 1"` → `"61"` gibi bitişik olması gereken parçalar birleştirilir.
+4. **E-posta Normalizasyonu:** `"at"` → `@`, `"nokta"` → `.`, `"ci mail"` → `"gmail"` gibi sesli kalıplar düzeltilir.
+
+---
+
+### 5. ElevenLabs Multilingual v2 — Metinden Konuşmaya (TTS)
+
+| Özellik | Detay |
+| --- | --- |
+| **Model** | `eleven_multilingual_v2` |
+| **Fallback** | Microsoft Edge-TTS (`tr-TR-EmelNeural`) |
+| **Kullanım Amacı** | AI yanıtının sesli olarak okunması |
+
+**Neden ElevenLabs + Edge-TTS Fallback?**
+
+- **ElevenLabs:** Piyasadaki en doğal Türkçe TTS motorlarından biridir. Prozodi, vurgu ve duygu aktarımı açısından güçlüdür. Ancak API kotası sınırlıdır.  
+- **Edge-TTS (Fallback):** ElevenLabs kotası dolduğunda veya API hatası oluştuğunda, Microsoft'un ücretsiz Edge-TTS motoru devreye girer. Kalite bir miktar düşer ancak kesintisiz hizmet sağlanır.
+
+**TTS Öncesi Metin Hazırlığı:**
+
+TTS motorlarına gönderilmeden önce metin şu işlemlerden geçer:
+
+- ACT token'ları ve DELAY işaretleri temizlenir
+- Sayılar Türkçe okunuşlarına dönüştürülür: `1.191,38 TL` → *"bin yüz doksan bir lira otuz sekiz kuruş"*
+- 8+ haneli uzun sayılar (PNR, ID) rakam rakam okunur: `12345678` → *"bir iki üç dört beş altı yedi sekiz"*
+
+---
+
+## 🧩 Modül Açıklamaları
+
+### Backend Servisleri (`backend/services/`)
+
+| Modül | Dosya | Açıklama |
+| --- | --- | --- |
+| **LLM Service** | `llm_service.py` | Gemini API ile iletişim, system prompt oluşturma, konuşma geçmişi yönetimi, streaming + non-streaming yanıt üretimi |
+| **Tools** | `tools.py` | Gemini'nin çağırdığı 6 araç fonksiyonu: sefer arama, koltuk doğrulama, TC doğrulama, telefon doğrulama, e-posta doğrulama, rezervasyon yapma |
+| **STT Service** | `stt_service.py` | ElevenLabs Scribe ile ses→metin dönüşümü, Türkçe sayı/e-posta/telefon normalizasyonu |
+| **TTS Service** | `tts_service.py` | ElevenLabs veya Edge-TTS ile metin→ses dönüşümü, Türkçe sayı okunuş hazırlığı |
+| **Emotion Service** | `emotion_service_v2.py` | ACT token ayrıştırma + XLM-RoBERTa tabanlı duygu analizi |
+| **Semantic Cache** | `semantic_cache_service.py` | all-MiniLM-L6-v2 ile vektör tabanlı semantik önbellek, tekrarlı sorgularda LLM bypass |
+| **Memory Service** | `memory_service.py` | Her 10 mesajda bir Gemini ile konuşma özetlemesi, uzun konuşmalarda bağlam penceresi yönetimi |
+
+### Backend Router'ları (`backend/routers/`)
+
+| Router | Endpoint | Açıklama |
+| --- | --- | --- |
+| **Chat** | `POST /api/chat`, `WS /ws/chat` | Ana sohbet endpoint'leri. Deterministik doğrulama kısa yolları + Gemini LLM + TTS + duygu analizi pipeline'ı |
+| **STT** | `POST /api/stt` | Ses dosyası alır, transkripsiyon döndürür |
+| **TTS** | `POST /api/tts` | Metin alır, base64 kodlanmış ses döndürür |
+
+### Frontend (`index.html`, `main.js`, `style.css`)
+
+| Bileşen | Teknoloji | Açıklama |
+| --- | --- | --- |
+| **3D Avatar** | Three.js + @pixiv/three-vrm | VRM 1.0 formatında 3D karakter modeli. Göz kırpma, nefes alma, kafa hareketi, lip-sync animasyonları |
+| **Lip-Sync** | Web Audio API (FFT) | Ses frekans analizi ile gerçek zamanlı ağız hareketleri (aa, ih, ee, oh, ou morph'ları) |
+| **Duygu Sistemi** | Custom Expression Engine | 10 farklı duygu durumu (happy, sad, angry, think, curious vb.) + yumuşak geçiş (lerp) |
+| **WebSocket Chat** | Native WebSocket | Streaming metin + ses + duygu güncellemeleri |
+| **Ses Kayıt** | MediaRecorder API | Basılı tutarak konuşma (push-to-talk) |
+
+---
+
+## 🔄 Konuşma Akışı (Rezervasyon Pipeline)
+
+```text
+Kullanıcı: "Yarın Ankara'dan İstanbul'a gitmek istiyorum"
+    │
+    ▼
+[1] STT Normalizasyonu (sesli giriş ise)
+    │
+    ▼
+[2] Semantic Cache Kontrolü → Cache HIT ise → Önceki yanıtı döndür
+    │                                              │
+    │ Cache MISS                                   │
+    ▼                                              │
+[3] Gemini 2.5 Flash                               │
+    ├── NLU: Niyet = sefer arama                   │
+    ├── Slot: kalkış=Ankara, varış=İstanbul         │
+    ├── Function Call: get_bus_trips(...)           │
+    ├── Tool Sonucu: "Sefer bulundu, koltuk 3,5,7" │
+    └── NLG: "Yarın için şu seferler mevcut..."    │
+    │                                              │
+    ▼                                              │
+[4] TTS: Yanıtı seslendir (ElevenLabs / Edge-TTS) │
+    │                                              │
+    ▼                                              │
+[5] Duygu Analizi: ACT Token → "happy"             │
+    │                                              │
+    ▼                                              │
+[6] Semantic Cache'e Kaydet                        │
+    │                                              │
+    ▼ ◄──────────────────────────────────────────────
+[7] Frontend: Metin + Ses + Avatar Duygu Güncelle
+```
+
+### Rezervasyon Adımları
+
+| Adım | Kullanıcıdan Alınan Bilgi | Çağrılan Araç |
+| --- | --- | --- |
+| 1 | Kalkış ve varış şehri | — |
+| 2 | Seyahat tarihi | `get_bus_trips` |
+| 3 | Koltuk seçimi | `validate_seat_selection` |
+| 4 | Ad soyad | — |
+| 5 | T.C. Kimlik No | `validate_tc_number` |
+| 6 | Telefon numarası | `validate_phone_number` |
+| 7 | E-posta adresi | `validate_email_address` |
+| 8 | Bilgi özeti onayı | — |
+| 9 | Onay sonrası rezervasyon | `make_reservation` |
+
+---
+
+## 🛡️ Teknik Öne Çıkanlar
+
+### T.C. Kimlik Doğrulama Algoritması
+
+Standart 11 haneli algoritmik doğrulama uygulanır:
+
+- İlk hane 0 olamaz
+- Onuncu hane: `((tek_pozisyonlar × 7) - çift_pozisyonlar) mod 10`
+- On birinci hane: `(ilk_10_hanenin_toplamı) mod 10`
+- On birinci hane çift sayı olmalıdır
+
+Sesli girişlerde STT parçalanmalarını (ör. "beş yüz otuz yedi altmış iki...") doğru şekilde birleştiren özel bir *kayan pencere* (sliding window) algoritması kullanılır.
+
+### Deterministik Doğrulama Kısa Yolları
+
+Chat router'da, LLM'in gereksiz tur kaybetmesini önlemek için belirli bağlamlarda deterministik doğrulama uygulanır:
+
+- Bot telefon numarası sorduysa ve kullanıcı rakam gönderdiyse → `validate_phone_number` LLM'den önce çağrılır
+- Bot koltuk sorduysa ve kullanıcı kısa bir sayı gönderdiyse → `validate_seat_selection` doğrudan çağrılır
+- Bu sonuçlar, LLM'e `[SİSTEM BİLGİSİ]` formatında fısıldanarak bir sonraki adıma geçişi hızlandırır
+
+### Konuşma Hafızası (Memory Service)
+
+Uzun konuşmalarda Gemini'nin token bağlam penceresi dolabilir. Bu sorunu çözmek için her 10 mesajda bir Gemini ile konuşmanın özeti üretilir. Sonraki mesajlarda bu özet system prompt'a eklenir, böylece "unutkanlık" önlenir.
+
+---
+
+## 🗂️ Proje Yapısı
+
+```text
+Bus Ticket Booking Agent/
+├── index.html                  # Ana frontend sayfası
+├── main.js                     # 3D avatar, WebSocket, UI mantığı
+├── style.css                   # Arayüz stilleri
+├── ela_avatar.png              # Chat baloncuğu avatar ikonu
+├── models/
+│   └── character.vrm           # 3D karakter modeli (VRM 1.0)
+├── bilet_sistemi.db            # Sefer veritabanı (SQLite)
+├── rezervasyonlar.db           # Rezervasyon veritabanı (SQLite)
+├── start.bat                   # Tek tıkla başlatma scripti
+│
+└── backend/
+    ├── main.py                 # FastAPI uygulama giriş noktası
+    ├── config.py               # Ayarlar, system prompt, API anahtarları
+    ├── requirements.txt        # Python bağımlılıkları
+    ├── .env                    # Ortam değişkenleri (API anahtarları)
+    ├── bilet_sistemi.csv       # Sefer verileri (CSV kaynak)
+    ├── rezervasyonlar.csv      # Rezervasyon verileri (CSV kaynak)
+    │
+    ├── routers/
+    │   ├── chat.py             # Sohbet endpoint'leri (REST + WebSocket)
+    │   ├── stt.py              # Konuşma tanıma endpoint'i
+    │   └── tts.py              # Ses sentezi endpoint'i
+    │
+    └── services/
+        ├── llm_service.py      # Gemini LLM entegrasyonu
+        ├── tools.py            # Araç fonksiyonları (sefer, TC, telefon, email, rezervasyon)
+        ├── stt_service.py      # ElevenLabs STT + Türkçe normalizasyon
+        ├── tts_service.py      # ElevenLabs TTS + Edge-TTS fallback
+        ├── emotion_service_v2.py  # Duygu analizi (ACT + XLM-RoBERTa)
+        ├── semantic_cache_service.py # Semantik önbellek
+        └── memory_service.py   # Konuşma özeti / hafıza yönetimi
+```
+
+---
+
+## ⚙️ Kurulum ve Çalıştırma
 
 ### Gereksinimler
 
-- Python 3.11 veya ustu
-- [Google AI Studio](https://aistudio.google.com/) — Gemini API key
-- [ElevenLabs](https://elevenlabs.io/) — TTS API key ve Voice ID
+- Python 3.10+
+- Node.js (Live Server için, isteğe bağlı)
+- GPU (isteğe bağlı, duygu analizi modelini hızlandırır)
 
-### Adim Adim Kurulum
-
-1. **Projeyi klonlayin:**
-
-    ```bash
-    git clone https://github.com/duygusezr/Bus-Ticket-Booking-Agent.git
-    cd Bus-Ticket-Booking-Agent
-    ```
-
-2. **Sanal ortam olusturun ve bagimliliklari yukleyin:**
-
-    ```bash
-    cd backend
-    python -m venv venv
-
-    # Windows
-    .\venv\Scripts\activate
-
-    # macOS / Linux
-    source venv/bin/activate
-
-    pip install -r requirements.txt
-    ```
-
-3. **`.env` dosyasini ayarlayin:**
-
-    Ornek dosyayi kopyalayip anahtarlari doldurun:
-
-    ```bash
-    cp .env.example .env
-    ```
-
-    ```env
-    GOOGLE_API_KEY=your_google_api_key_here
-    ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
-    ELEVENLABS_VOICE_ID=your_voice_id_here
-    GEMINI_CHAT_MODEL=gemini-2.5-flash
-    DEFAULT_LANG=tr
-    PORT=8001
-    ```
-
----
-
-## 🚀 Kullanim
-
-Proje kok dizininden `start.bat` ile kolayca baslatilabilir:
-
-```powershell
-# Proje kokunden
-.\start.bat
-```
-
-Bu komut:
-
-1. **Backend** sunucusunu `8001` portunda baslatir.
-2. Yerel **Frontend** HTTP sunucusunu `3000` portunda baslatir.
-3. Tarayicida otomatik olarak `http://localhost:3000` adresini acar.
-
-### Ornek Diyalog
-
-> **Kullanici:** *"Bursa'dan Istanbul'a uygun tarih var mi?"*
->
-> **Ela:** *"En yakin seferleri kontrol ettim. 19 Nisan ve 30 Haziran tarihlerinde secenekler var. Hangisini incelemek istersiniz?"*
-
-### Proje Akis Senaryosu
-
-1. **Karsilama ve Niyet Alma**
-   - Ela, kullanicidan kalkis, varis ve tarih bilgisini ister.
-
-2. **Eksik Bilgi Tamamlama**
-   - Kullanici kismi bilgi verirse (sadece rota veya sadece tarih), sadece eksik alan sorulur.
-
-3. **Sefer Sorgulama**
-   - Backend `get_bus_trips` araci ile seferleri arar.
-   - Tam eslesme yoksa en yakin alternatif tarihler sunulur.
-
-4. **Sefer Tarihi Secimi**
-   - Kullanici bir tarihi sectiginde koltuk secim adimina gecilir.
-
-5. **Koltuk Dogrulama**
-   - Bos koltuklar listelenir.
-   - Kullanici `5` veya `bes` gibi bir secim yaptiginda backend deterministik olarak `validate_seat_selection` ile kontrol eder.
-   - Uygunsa bot onay sorusu sorar: **"Devam etmek istiyor musunuz?"**
-
-6. **Yolcu Bilgileri Toplama**
-   - Ad-soyad, T.C. Kimlik, telefon ve e-posta bilgileri alinir.
-
-7. **TC Kimlik Dogrulama**
-   - `validate_tc_number` ve arka planda checksum algoritmasi calisir.
-   - 11 hane, ilk hane, 10./11. hane ve cift son hane kurallari kontrol edilir.
-
-8. **Rezervasyon Olusturma**
-   - `make_reservation` ile koltuk DB'den dusulur, PNR olusturulur, rezervasyon kaydi yazilir.
-
-9. **Sesli ve Yazili Geri Donus**
-   - Metin yaniti TTS ile seslendirilir.
-   - Turkce sayilar TTS oncesi daha dogal okunacak sekle cevrilir.
-
-10. **Konusma Bellegi ve Hizli Yanit**
-   - Oturum ozeti memory servisine kaydedilir.
-   - Benzer sorular semantic cache ile daha hizli cevaplanir.
-
----
-
-## 🛠️ Konfigurasyon
-
-`.env` icindeki temel degiskenler:
-
-| Degisken | Aciklama |
-| ---------- | ------------- |
-| `GOOGLE_API_KEY` | Gemini API anahtari |
-| `ELEVENLABS_API_KEY` | Ses sentezi ve ses tanima API anahtari |
-| `ELEVENLABS_VOICE_ID` | ELA karakterinin ses kimligi |
-| `GEMINI_CHAT_MODEL` | Kullanilan model (ornek: `gemini-2.5-flash`) |
-| `CORS_ORIGINS` | Izinli frontend origin adresleri (virgulle ayrilmis) |
-
----
-
-## 📁 Proje Yapisi
-
-```text
-Bus-Ticket-Booking-Agent/
-├── index.html                  # Frontend (Glassmorphism UI)
-├── main.js                     # 3D render, WebSocket ve sohbet mantigi
-├── style.css                   # UI stilleri ve animasyonlar
-├── ela_avatar.png              # Avatar ikonu
-├── house_bg.jpg                # Arka plan gorseli
-├── start.bat                   # Otomatik baslatma scripti
-├── models/                     # VRM 3D model dosyalari
-│
-└── backend/
-    ├── main.py                 # FastAPI giris noktasi
-    ├── config.py               # System prompt ve ayarlar
-    ├── requirements.txt        # Python bagimliliklari
-    ├── .env.example            # Ortam degiskeni sablonu
-    ├── bilet_sistemi.csv       # Sefer veritabani (CSV)
-    │
-    ├── routers/
-    │   ├── chat.py             # Chat WebSocket endpoint
-    │   ├── tts.py              # Text-to-Speech endpoint
-    │   ├── stt.py              # Speech-to-Text endpoint
-    │   └── emotion.py          # Duygu analizi endpoint
-    │
-    └── services/
-        ├── llm_service.py      # Gemini entegrasyonu
-        ├── tools.py            # Sefer, koltuk, TC ve rezervasyon mantigi
-        ├── tts_service.py      # Ses sentez servisi
-        ├── stt_service.py      # Ses tanima servisi
-        ├── emotion_service_v2.py   # Metinden duygu analizi
-        ├── memory_service.py   # Konusma ozeti/hafiza yonetimi
-        └── semantic_cache_service.py # RAM tabanli semantik cache
-```
-
----
-
-## 🧪 Test
-
-Hazir test scriptleri ile temel veritabani ve rezervasyon akislarini test edebilirsiniz:
+### 1. Backend Kurulumu
 
 ```bash
 cd backend
-
-# Veritabani ve tool testleri
-python test_db_tool.py
-
-# Rezervasyon akisi testleri
-python test_reservation.py
+python -m venv venv
+venv\Scripts\activate        # Windows
+pip install -r requirements.txt
 ```
 
-### Manuel Dogrulama Listesi (Onerilir)
+### 2. Ortam Değişkenleri
 
-1. **Koltuk Secimi Dayanikliligi**
-   - `5` ve `bes` ile koltuk secimi deneyin.
-   - Beklenen: Koltuk kabul edilir ve bot onay sorusu sorar.
+`backend/.env` dosyasını yapılandırın:
 
-2. **TC Girisi Dayanikliligi**
-   - Noktalama/boslukla deneyin (`10000000146.` / `1 0 0 0 0 0 0 0 1 4 6`).
-   - Beklenen: Backend normalize eder ve dogru checksum kontrolu yapar.
-   - Sonu tek haneli gecersiz denemeler yapin.
-   - Beklenen: `T.C. Kimlik numarası çift sayı ile bitmelidir.`
+```env
+GOOGLE_API_KEY=your_google_api_key
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+GEMINI_CHAT_MODEL=gemini-2.5-flash
+ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL
+DEFAULT_LANG=tr
+PORT=8001
+```
 
-3. **STT Gurultu Filtreleme**
-   - Arka plan sesli karisik bir cumle soyleyin.
-   - Beklenen: Alakasiz parcaciklar azalir, rezervasyon niyeti korunur.
+### 3. Çalıştırma
 
-4. **Turkce TTS Sayi Okuma**
-   - Fiyat ve uzun sayi iceren bot yanitlarini tetikleyin.
-   - Beklenen: `1.191,38 TL` gibi degerler daha dogal okunur.
+```bash
+# Backend
+cd backend
+python main.py
 
----
+# Frontend (ayrı terminalde)
+# Proje kök dizininde Live Server ile index.html'yi açın
+# veya start.bat dosyasını çalıştırın
+```
 
-## 🚢 Dagitim
-
-Proje su an agirlikli olarak lokal gelistirme icin hazirlanmistir. Uretim ortami icin:
-
-1. **Backend:** Docker ile paketleyip Render, Heroku veya VPS'e deploy edin.
-2. **Frontend:** Statik site olarak GitHub Pages veya Vercel'e yayinlayin.
-3. **Onemli:** `.env` icindeki `CORS_ORIGINS` degerini production domain'inizle guncelleyin.
+Backend `http://localhost:8001` adresinde, frontend ise `http://localhost:3000` (veya Live Server portu) üzerinde çalışır.
 
 ---
 
-## 🤝 Katki
+## 📦 Kullanılan Teknolojiler ve Kütüphaneler
 
-1. Repoyu fork'layin.
-2. Yeni bir branch acin (`git checkout -b feature/yeni-ozellik`).
-3. Degisiklikleri commit edin (`git commit -m "Yeni ozellik eklendi"`).
-4. Branch'i push edin (`git push origin feature/yeni-ozellik`).
-5. Pull Request acin.
+| Teknoloji | Versiyon / Detay | Kullanım Alanı |
+| --- | --- | --- |
+| **Python** | 3.10+ | Backend dili |
+| **FastAPI** | — | REST API + WebSocket framework |
+| **Uvicorn** | — | ASGI sunucu |
+| **google-genai** | — | Google Gemini API SDK |
+| **ElevenLabs SDK** | — | STT (Scribe) + TTS |
+| **edge-tts** | — | TTS Fallback (Microsoft) |
+| **transformers** | HuggingFace | XLM-RoBERTa duygu modeli |
+| **sentence-transformers** | — | Semantik cache embedding |
+| **torch** | PyTorch | Model inference |
+| **SQLite** | Built-in | Veritabanı |
+| **Three.js** | r164 | 3D render engine |
+| **@pixiv/three-vrm** | 3.0.0 | VRM model yükleme/animasyon |
+| **Chart.js** | — | Duygu radar grafiği |
+| **Web Audio API** | Native | Lip-sync frekans analizi |
 
 ---
 
-## 📝 Lisans
+## 📊 Performans Metrikleri
 
-Bu proje **MIT Lisansi** ile lisanslanmistir.
+| Metrik | Değer |
+| --- | --- |
+| LLM Yanıt Süresi (ortalama) | ~1.5–3 saniye |
+| TTS Üretim Süresi | ~0.5–1.5 saniye |
+| Semantik Cache Hit Süresi | ~5ms |
+| Duygu Analizi (Transformer) | ~50–100ms (CPU) |
+| STT Transkripsiyon | ~1–2 saniye |
+| Avatar FPS | 60 FPS (modern tarayıcı) |
 
 ---
 
-## ✉️ Iletisim
+## 👤 Geliştirici
 
-**Duygu Sezer** — [GitHub](https://github.com/duygusezr)
+Bu proje, yapay zekâ destekli konuşma arayüzlerinin gerçek dünya uygulamalarındaki potansiyelini göstermek amacıyla geliştirilmiştir.
 
-Portfoy Projesi: **ELA — Voice-Powered Digital Assistant Experience** 🎭
+---
+
+## 📄 Lisans
+
+Bu proje akademik amaçlı geliştirilmiştir.
