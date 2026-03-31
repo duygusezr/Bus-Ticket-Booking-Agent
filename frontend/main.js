@@ -621,7 +621,7 @@ function initWebSocket() {
     if (chatSocket && (chatSocket.readyState === WebSocket.OPEN || chatSocket.readyState === WebSocket.CONNECTING)) return;
 
     isReconnecting = false;
-    chatSocket = new WebSocket(`${WS_BASE}/ws/chat`);
+    chatSocket = new WebSocket(`${WS_BASE}/ws`);
 
     chatSocket.onopen = () => {
         console.log("WebSocket bağlantısı başarılı.");
@@ -803,7 +803,7 @@ const translations = {
 function setLanguage(lang) {
     currentLang = lang;
     chatInput.placeholder = translations[lang].placeholder;
-    
+
     // Alt başlık çevirisi
     const aiSubtitle = document.getElementById('ai-subtitle');
     if (aiSubtitle) aiSubtitle.textContent = translations[lang].subtitle;
@@ -857,9 +857,9 @@ micBtn.addEventListener('mousedown', async () => {
                 const res = await fetch(`${API_BASE}/api/stt`, { method: 'POST', body: formData });
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.text && data.text.trim().length > 0) { 
-                        chatInput.value = data.text; 
-                        sendMessage(); 
+                    if (data.text && data.text.trim().length > 0) {
+                        chatInput.value = data.text;
+                        sendMessage();
                     }
                     else subtitle.textContent = "Sesi anlayamadım.";
                 } else if (res.status === 429) {
@@ -893,10 +893,10 @@ micBtn.addEventListener('mouseup', () => {
 // MESAJ GÖNDERME
 // ============================================================
 sendBtn.addEventListener('click', sendMessage);
-chatInput.addEventListener('keypress', e => { 
+chatInput.addEventListener('keypress', e => {
     if (e.key === 'Enter') {
         e.preventDefault();
-        sendMessage(); 
+        sendMessage();
     }
 });
 chatInput.addEventListener('input', () => { if (chatInput.value.trim().length > 0) stopAudio(); });
