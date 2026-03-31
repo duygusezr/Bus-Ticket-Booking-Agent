@@ -600,6 +600,15 @@ const closeEmotionBtn = document.getElementById('close-emotion-sidebar');
 const emotionBadge = document.getElementById('current-emotion-badge');
 
 // ============================================================
+// BACKEND URL KONFİGÜRASYONU
+// Localhost'ta çalışırken localhost, deploy'da Railway URL'si kullanılır
+// ============================================================
+const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_BASE = IS_LOCAL ? 'http://localhost:8001' : 'https://bus-ticket-booking-agent-production.up.railway.app';
+const WS_BASE = IS_LOCAL ? 'ws://localhost:8001' : 'wss://bus-ticket-booking-agent-production.up.railway.app';
+console.log(`[CONFIG] API: ${API_BASE} | WS: ${WS_BASE}`);
+
+// ============================================================
 // WEBSOCKET BAĞLANTISI (/ws/chat)
 // ============================================================
 let chatSocket = null;
@@ -612,7 +621,7 @@ function initWebSocket() {
     if (chatSocket && (chatSocket.readyState === WebSocket.OPEN || chatSocket.readyState === WebSocket.CONNECTING)) return;
 
     isReconnecting = false;
-    chatSocket = new WebSocket('ws://localhost:8001/ws/chat');
+    chatSocket = new WebSocket(`${WS_BASE}/ws/chat`);
 
     chatSocket.onopen = () => {
         console.log("WebSocket bağlantısı başarılı.");
@@ -845,7 +854,7 @@ micBtn.addEventListener('mousedown', async () => {
 
             try {
                 formData.append('lang', currentLang); // Aktif dili STT'ye ilet
-                const res = await fetch('http://localhost:8001/api/stt', { method: 'POST', body: formData });
+                const res = await fetch(`${API_BASE}/api/stt`, { method: 'POST', body: formData });
                 if (res.ok) {
                     const data = await res.json();
                     if (data.text && data.text.trim().length > 0) { 
