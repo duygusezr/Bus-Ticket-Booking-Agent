@@ -9,7 +9,8 @@ from datetime import datetime
 from pathlib import Path
 
 # DB ve CSV dosya yolları
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# BASE_DIR burada 'backend' dizinini temsil eder
+BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "database" / "bilet_sistemi.db"
 CSV_PATH = BASE_DIR / "database" / "bilet_sistemi.csv"
 

@@ -335,20 +335,18 @@ Bus Ticket Booking Agent/
 │   ├── house_bg.jpg            # Arka plan resmi
 │   └── models/
 │       └── character.vrm       # 3D karakter modeli (VRM 1.0)
-├── database/                   # Veritabanı ve CSV dosyaları
-│   ├── bilet_sistemi.db        # Sefer veritabanı (SQLite)
-│   ├── rezervasyonlar.db       # Rezervasyon veritabanı (SQLite)
-│   ├── bilet_sistemi.csv       # Sefer yedek dosyası (CSV)
-│   └── rezervasyonlar.csv      # Rezervasyon yedek dosyası (CSV)
 ├── start.bat                   # Tek tıkla başlatma scripti
 │
 └── backend/
+    ├── database/               # Veritabanı ve CSV dosyaları
+    │   ├── bilet_sistemi.db    # Sefer veritabanı (SQLite)
+    │   ├── rezervasyonlar.db   # Rezervasyon veritabanı (SQLite)
+    │   ├── bilet_sistemi.csv   # Sefer yedek dosyası (CSV)
+    │   └── rezervasyonlar.csv  # Rezervasyon yedek dosyası (CSV)
     ├── main.py                 # FastAPI uygulama giriş noktası
     ├── config.py               # Ayarlar, system prompt, API anahtarları
     ├── requirements.txt        # Python bağımlılıkları
     ├── .env                    # Ortam değişkenleri (API anahtarları)
-    ├── bilet_sistemi.csv       # Sefer verileri (CSV kaynak)
-    ├── rezervasyonlar.csv      # Rezervasyon verileri (CSV kaynak)
     │
     ├── routers/
     │   ├── chat.py             # Sohbet endpoint'leri (REST + WebSocket)

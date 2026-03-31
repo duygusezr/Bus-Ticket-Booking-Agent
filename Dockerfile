@@ -14,11 +14,8 @@ COPY backend/requirements.txt ./requirements.txt
 # CPU-only PyTorch + diğer bağımlılıklar
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Backend kodunu kopyala
+# Backend kodunu (ve içindeki database klasörünü) kopyala
 COPY backend/ ./
-
-# Veritabanı ve veri dosyalarını kopyala
-COPY database/ ../database/
 
 # PORT ortam değişkeni Railway tarafından otomatik atanır
 ENV PORT=8001

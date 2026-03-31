@@ -11,7 +11,7 @@ backend/test_*.mp3
 node_modules/
 frontend/
 house_bg.jpg
-database/memory.db
+backend/database/memory.db
 *.pyc
 *.pyo
 __pycache__/
