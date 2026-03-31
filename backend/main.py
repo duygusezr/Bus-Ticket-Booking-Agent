@@ -54,7 +54,7 @@ app.include_router(tts_router)
 @app.get("/")
 async def root():
     """Çalışma durumu kontrol endpoint'i."""
-    return {"status": "ok", "message": "Avatar Backend API çalışıyor."}
+    return {"status": "ok", "message": "API çalışıyor 🚀"}
 
 
 if __name__ == "__main__":
