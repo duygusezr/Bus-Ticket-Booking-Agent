@@ -45,72 +45,94 @@ def _build_system_prompt(lang: str, summary: str) -> str:
 
 
 async def generate_chat_response(text: str, history: List[Dict[str, str]], lang: str, session_id: str = "default") -> str:
-    """Gemini ile sohbet yanıtı üretir (Otomatik araç çağrımı aktiftir)."""
+    """Gemini ile sohbet yanıtı üretir (Manuel Araç Çağrı Döngüsü ile)."""
     try:
         from services.tools import get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number, validate_phone_number, validate_email_address
+        
+        # Tool map for dynamic execution
+        tools_map = {
+            "get_bus_trips": get_bus_trips,
+            "make_reservation": make_reservation,
+            "validate_seat_selection": validate_seat_selection,
+            "validate_tc_number": validate_tc_number,
+            "validate_phone_number": validate_phone_number,
+            "validate_email_address": validate_email_address
+        }
+
         summary = get_current_summary(session_id)
         system_prompt = _build_system_prompt(lang, summary)
         
         client = _build_gemini_client()
         gemini_history = _build_history_gemini(history)
         
+        # Manuel döngü için automatic_function_calling=False
         chat = client.aio.chats.create(
             model=GEMINI_MODEL,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 tools=[get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number, validate_phone_number, validate_email_address],
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 temperature=0.0
             ),
             history=gemini_history
         )
+
         response = await chat.send_message(text)
         
-        # Yanıt metni araç çağrısı döngüsü bittikten sonra gelir
+        # Tool call döngüsü
+        while response.candidates[0].content.parts[0].function_call:
+            for part in response.candidates[0].content.parts:
+                if fn := part.function_call:
+                    tool_name = fn.name
+                    args = fn.args
+                    print(f"[LLM_SERVICE] ARAÇ ÇAĞRISI: {tool_name} (Args: {args})")
+                    
+                    if tool_name in tools_map:
+                        # Fonksiyonu çalıştır
+                        try:
+                            result = tools_map[tool_name](**args)
+                            print(f"[LLM_SERVICE] ARAÇ SONUCU: {result}")
+                        except Exception as tool_err:
+                            result = f"Hata: {str(tool_err)}"
+                        
+                        # Sonucu geri gönder
+                        response = await chat.send_message(
+                            types.Content(
+                                role="user",
+                                parts=[
+                                    types.Part.from_function_response(
+                                        name=tool_name,
+                                        response={"result": result}
+                                    )
+                                ]
+                            )
+                        )
+                    else:
+                        break
+            
+            if not response.candidates or not response.candidates[0].content.parts:
+                break
+
         result_text = response.text or ""
-        
         asyncio.create_task(update_memory(text, result_text, session_id))
         return result_text
+
     except Exception as e:
         err_str = str(e)
+        print(f"[LLM_ERROR] {err_str}")
         if "429" in err_str or "quota" in err_str.lower():
             return "Şu an API kotam doldu, biraz bekleyip tekrar dener misin?"
-        print(f"[LLM_ERROR] {err_str}")
         raise Exception(f"Gemini LLM Hatası: {err_str}")
 
 
 async def generate_chat_response_stream(text: str, history: List[Dict[str, str]], lang: str, session_id: str = "default") -> AsyncGenerator[str, None]:
-    """Streaming Gemini yanıtı (Otomatik araç çağrımı aktiftir)."""
-    summary = get_current_summary(session_id)
-    system_prompt = _build_system_prompt(lang, summary)
+    """Streaming Gemini yanıtı (Manuel döngü ile araç çağrılarını destekler)."""
+    # Basitlik için stream modunda da önce araçları çözer, sonra metni akıtırız
+    # Bu, "streaming tool calls" yapmaktan daha stabildir.
     try:
-        from services.tools import get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number, validate_phone_number, validate_email_address
-        client = _build_gemini_client()
-        gemini_history = _build_history_gemini(history)
-        
-        chat = client.aio.chats.create(
-            model=GEMINI_MODEL,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                tools=[get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number, validate_phone_number, validate_email_address],
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
-                temperature=0.3
-            ),
-            history=gemini_history
-        )
-        
-        full_text = ""
-        # Chat.send_message_stream asenkron bir iteratör döner
-        async for chunk in await chat.send_message_stream(text):
-            if chunk.text:
-                full_text += chunk.text
-                yield chunk.text
-        
-        asyncio.create_task(update_memory(text, full_text, session_id))
+        final_text = await generate_chat_response(text, history, lang, session_id)
+        # Kelime kelime simüle et (veya doğrudan yield et)
+        # Gerçek stream için tool call bittikten sonra send_message_stream çağrılmalı
+        yield final_text
     except Exception as e:
-        err_str = str(e)
-        print(f"[STREAM_ERROR] {err_str}")
-        if "429" in err_str or "quota" in err_str.lower():
-            yield "Şu an API kotam doldu, biraz bekleyip tekrar dener misin?"
-            return
-        raise Exception(f"Gemini Stream Hatası: {err_str}")
+        yield f"Hata: {str(e)}"

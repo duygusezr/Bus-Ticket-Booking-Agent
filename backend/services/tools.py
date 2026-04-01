@@ -739,6 +739,7 @@ def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: st
 
         conn_rez.close()
         
+        print(f"[DB_SUCCESS] Rezervasyon kaydedildi! PNR: {pnr_code}, Sefer: {sefer_id}, Yolcu: {yolcu_ad_soyad}")
         return f"Başarılı! PNR Kodu: {pnr_code}"
         
     except Exception as e:
