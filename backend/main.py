@@ -57,5 +57,15 @@ async def root():
     return {"status": "ok", "message": "API çalışıyor 🚀"}
 
 
+@app.websocket("/ws")
+async def dummy_ws_endpoint(websocket):
+    """
+    Railway Healthcheck veya sayfa yenilemelerinde arka planda kalan Vite/HMR 
+    gibi araçların sürekli loglarda 403 Forbidden üretmesini önleyen boş uç nokta.
+    """
+    await websocket.accept()
+    await websocket.close()
+
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=settings.PORT, reload=False)

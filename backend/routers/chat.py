@@ -218,7 +218,12 @@ async def websocket_chat(websocket: WebSocket):
     try:
         while True:
             data = await websocket.receive_text()
-            request_data = json.loads(data)
+            try:
+                request_data = json.loads(data)
+            except json.JSONDecodeError:
+                # Gelen veri JSON değilse yoksay (örn. ping veya HMR)
+                print(f"[WS] Beklenmeyen veri alındı (JSON değil): {data}")
+                continue
 
             text = request_data.get("text", "")
             history = request_data.get("history", [])
