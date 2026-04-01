@@ -2,6 +2,8 @@ import io
 import re
 from elevenlabs.client import ElevenLabs
 from config import settings
+import google.genai as genai
+from google.genai import types
 
 def get_eleven_client():
     """Anahtari her seferinde guncel ayarlardan alarak client olusturur."""
@@ -420,68 +422,114 @@ def _detect_numeric_context(text: str) -> bool:
     return numeric_token_count / len(tokens) >= 0.6
 
 
+async def _transcribe_gemini_fallback(audio_bytes: bytes, mime_type: str, lang: str) -> dict:
+    """
+    Gemini 2.5 Flash STT fallback when ElevenLabs fails.
+    """
+    try:
+        print(f"DEBUG: Falling back to Gemini STT... (Mime: {mime_type}, Lang: {lang})")
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
+        
+        # Determine language prompt
+        prompt = "Transcribe this audio to text. Only provide the transcript, no other text."
+        if lang == "tr":
+            prompt = "Bu sesi metne çevir. Sadece konuşulanları yaz, başka açıklama ekleme."
+            
+        response = await client.aio.models.generate_content(
+            model=settings.GEMINI_CHAT_MODEL,
+            contents=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                prompt
+            ]
+        )
+        
+        transcript = (response.text or "").strip()
+        # Clean up any "Transcript:" or "...") prefix Gemini might add
+        transcript = re.sub(r"^(Transcript|Transkripsiyon|Metin):\s*", "", transcript, flags=re.IGNORECASE)
+        
+        print(f"DEBUG: Gemini fallback transcript: '{transcript}'")
+        return {
+            "text": transcript,
+            "lang": lang
+        }
+    except Exception as e:
+        print(f"ERROR: Gemini STT fallback failed: {str(e)}")
+        raise e
+
 async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settings.DEFAULT_LANG) -> dict:
-    """Sadece ElevenLabs SDK (Scribe) kullanır."""
+    """ElevenLabs SDK (Scribe) dener, hata alırsa Gemini'ye düşer."""
     if not audio_bytes or len(audio_bytes) == 0:
         raise Exception("Gönderilen ses verisi boş.")
 
+    # Determine mime-type based on extension
+    if filename.endswith(".webm"):
+        mime_type = "audio/webm"
+    elif filename.endswith(".wav"):
+        mime_type = "audio/wav"
+    elif filename.endswith(".mp3"):
+        mime_type = "audio/mpeg"
+    elif filename.endswith(".ogg"):
+        mime_type = "audio/ogg"
+    else:
+        mime_type = "audio/webm"
+
     client = get_eleven_client()
-    if not client:
-        raise Exception("ElevenLabs API anahtarı ayarlanmamış veya geçersiz.")
+    
+    # 1. Try ElevenLabs Scribe
+    if client:
+        try:
+            print(f"DEBUG: ElevenLabs SDK STT (Scribe) çağrılıyor... ({len(audio_bytes)} byte)")
+            audio_file = io.BytesIO(audio_bytes)
 
+            resp = client.speech_to_text.convert(
+                file=(filename, audio_file, mime_type),
+                model_id="scribe_v1",
+                language_code=lang,
+            )
+
+            raw_text = str(getattr(resp, "text", "") or getattr(resp, "transcript", "") or "")
+            print(f"DEBUG: Ham transkripsiyon (ElevenLabs): '{raw_text}'")
+            
+            # Adım 1: ASR gürültüsünü temizle
+            clean_text = _normalize_stt_text(raw_text)
+            
+            # Adım 2: Bağlam tespiti ve uygun normalize
+            if _detect_email_context(clean_text):
+                from services.tools import _normalize_email_input
+                clean_text = _normalize_email_input(clean_text)
+            elif _detect_numeric_context(clean_text):
+                clean_text = _normalize_numeric_input(clean_text)
+            else:
+                clean_text = _convert_turkish_number_words(clean_text)
+                clean_text = _collapse_numeric_sequences(clean_text)
+            
+            return {
+                "text": clean_text,
+                "lang": getattr(resp, "language_code", lang)
+            }
+        except Exception as e:
+            err_msg = str(e).lower()
+            print(f"[STT] ElevenLabs failed ({err_msg}). Falling back to Gemini...")
+
+    # 2. Try Gemini Fallback
     try:
-        print(f"DEBUG: ElevenLabs SDK STT (Scribe) çağrılıyor... ({len(audio_bytes)} byte, {filename})")
-
-        # ElevenLabs SDK, file parametresi olarak (filename, file_object, content_type) tuple'ı bekler
-        audio_file = io.BytesIO(audio_bytes)
-
-        # Dosya uzantısına göre content type belirle
-        if filename.endswith(".webm"):
-            content_type = "audio/webm"
-        elif filename.endswith(".wav"):
-            content_type = "audio/wav"
-        elif filename.endswith(".mp3"):
-            content_type = "audio/mpeg"
-        elif filename.endswith(".ogg"):
-            content_type = "audio/ogg"
-        else:
-            content_type = "audio/webm"  # Tarayıcı kaydı genellikle webm
-
-        resp = client.speech_to_text.convert(
-            file=(filename, audio_file, content_type),
-            model_id="scribe_v1",
-            language_code=lang,  # Frontend'den gelen dil (tr veya en)
-        )
-
-        raw_text = str(getattr(resp, "text", "") or getattr(resp, "transcript", "") or "")
-        print(f"DEBUG: Ham transkripsiyon: '{raw_text}'")
+        gemini_result = await _transcribe_gemini_fallback(audio_bytes, mime_type, lang)
+        # Apply normalization to Gemini result too
+        text_from_gemini = gemini_result["text"]
         
-        # Adım 1: ASR gürültüsünü temizle
-        clean_text = _normalize_stt_text(raw_text)
-        print(f"DEBUG: ASR temizleme sonrası: '{clean_text}'")
-        
-        # Adım 2: Bağlam tespiti ve uygun normalize
-        if _detect_email_context(clean_text):
-            # E-posta bağlamı tespit edildi
+        if _detect_email_context(text_from_gemini):
             from services.tools import _normalize_email_input
-            clean_text = _normalize_email_input(clean_text)
-            print(f"DEBUG: Email normalize: '{raw_text}' -> '{clean_text}'")
-        elif _detect_numeric_context(clean_text):
-            # Sayısal veri (TC, telefon vb.)
-            numeric_result = _normalize_numeric_input(clean_text)
-            print(f"DEBUG: Sayısal normalize: '{clean_text}' -> '{numeric_result}'")
-            clean_text = numeric_result
+            text_from_gemini = _normalize_email_input(text_from_gemini)
+        elif _detect_numeric_context(text_from_gemini):
+            text_from_gemini = _normalize_numeric_input(text_from_gemini)
         else:
-            # Kelime bazlı dönüşüm (koltuk seçimi, tarih vb. için)
-            clean_text = _convert_turkish_number_words(clean_text)
-            clean_text = _collapse_numeric_sequences(clean_text)
-        
-        print(f"DEBUG: Final STT çıktısı: '{clean_text}'")
-
+            text_from_gemini = _convert_turkish_number_words(text_from_gemini)
+            text_from_gemini = _collapse_numeric_sequences(text_from_gemini)
+            
         return {
-            "text": clean_text,
-            "lang": getattr(resp, "language_code", settings.DEFAULT_LANG)
+            "text": text_from_gemini,
+            "lang": lang
         }
     except Exception as e:
-        print(f"ElevenLabs SDK STT Hatası: {str(e)}")
-        raise Exception(f"STT Servis Hatası: {str(e)}")
+        print(f"STT Fallback Hatası: {str(e)}")
+        raise Exception(f"Tüm STT servisleri başarısız oldu: {str(e)}")
