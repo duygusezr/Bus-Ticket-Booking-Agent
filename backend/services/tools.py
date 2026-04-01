@@ -677,14 +677,14 @@ def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: st
         cursor_seferler = conn_seferler.cursor()
         
         # 1. Seferi bul ve koltuğu rezerve et
-        cursor_seferler.execute("SELECT available_seats FROM seferler WHERE id = ?", (sefer_id,))
+        cursor_seferler.execute("SELECT * FROM seferler WHERE id = ?", (sefer_id,))
         row = cursor_seferler.fetchone()
         
         if not row:
             conn_seferler.close()
             return f"Hata: Belirtilen Sefer ID ({sefer_id}) veritabanında bulunamadı."
             
-        available_seats_str = row[0]
+        available_seats_str = row[7] # 7th col is available_seats
         # Koltukları listeye çevir, boşlukları temizle
         seats = [s.strip() for s in available_seats_str.split(',') if s.strip()]
         
@@ -698,6 +698,18 @@ def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: st
         # Seferi güncelle
         cursor_seferler.execute("UPDATE seferler SET available_seats = ? WHERE id = ?", (new_seats_str, sefer_id))
         conn_seferler.commit()
+        
+        # --- CSV GÜNCELLEME (Bilet Sistemi) ---
+        try:
+            cursor_seferler.execute("SELECT * FROM seferler")
+            all_rows = cursor_seferler.fetchall()
+            with open(CSV_PATH, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['id','departure_city','destination_city','bus_plate','travel_datetime','price','bus_type','available_seats'])
+                writer.writerows(all_rows)
+        except Exception as csv_err:
+            print(f"[TOOLS] Bilet CSV güncelleme hatası: {csv_err}")
+
         conn_seferler.close()
         
         # 2. Rezervasyon kaydı oluştur (Ayrı Veritabanı)
@@ -713,6 +725,18 @@ def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: st
         ''', (pnr_code, sefer_id, yolcu_ad_soyad, tc_no, telefon, eposta, koltuk_no, transaction_time, "completed"))
         
         conn_rez.commit()
+
+        # --- CSV GÜNCELLEME (Rezervasyonlar) ---
+        try:
+            cursor_rez.execute("SELECT * FROM rezervasyonlar")
+            all_rez = cursor_rez.fetchall()
+            with open(REZ_CSV_PATH, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['id','pnr_code','sefer_id','passenger_full_name','tc_identity_no','phone_number','email_address','seat_number','transaction_datetime','reservation_status'])
+                writer.writerows(all_rez)
+        except Exception as csv_err:
+            print(f"[TOOLS] Rezervasyon CSV güncelleme hatası: {csv_err}")
+
         conn_rez.close()
         
         return f"Başarılı! PNR Kodu: {pnr_code}"

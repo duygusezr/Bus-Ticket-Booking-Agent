@@ -45,7 +45,7 @@ def _build_system_prompt(lang: str, summary: str) -> str:
 
 
 async def generate_chat_response(text: str, history: List[Dict[str, str]], lang: str, session_id: str = "default") -> str:
-    """Gemini ile sohbet yanıtı üretir."""
+    """Gemini ile sohbet yanıtı üretir (Otomatik araç çağrımı aktiftir)."""
     try:
         from services.tools import get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number, validate_phone_number, validate_email_address
         summary = get_current_summary(session_id)
@@ -59,24 +59,28 @@ async def generate_chat_response(text: str, history: List[Dict[str, str]], lang:
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 tools=[get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number, validate_phone_number, validate_email_address],
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
                 temperature=0.0
             ),
             history=gemini_history
         )
         response = await chat.send_message(text)
+        
+        # Yanıt metni araç çağrısı döngüsü bittikten sonra gelir
         result_text = response.text or ""
-        # Hafıza güncellemeyi arka plana at (Non-blocking)
+        
         asyncio.create_task(update_memory(text, result_text, session_id))
         return result_text
     except Exception as e:
         err_str = str(e)
         if "429" in err_str or "quota" in err_str.lower():
             return "Şu an API kotam doldu, biraz bekleyip tekrar dener misin?"
+        print(f"[LLM_ERROR] {err_str}")
         raise Exception(f"Gemini LLM Hatası: {err_str}")
 
 
 async def generate_chat_response_stream(text: str, history: List[Dict[str, str]], lang: str, session_id: str = "default") -> AsyncGenerator[str, None]:
-    """Streaming Gemini yanıtı."""
+    """Streaming Gemini yanıtı (Otomatik araç çağrımı aktiftir)."""
     summary = get_current_summary(session_id)
     system_prompt = _build_system_prompt(lang, summary)
     try:
@@ -89,19 +93,23 @@ async def generate_chat_response_stream(text: str, history: List[Dict[str, str]]
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 tools=[get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number, validate_phone_number, validate_email_address],
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=False),
                 temperature=0.3
             ),
             history=gemini_history
         )
         
         full_text = ""
+        # Chat.send_message_stream asenkron bir iteratör döner
         async for chunk in await chat.send_message_stream(text):
             if chunk.text:
                 full_text += chunk.text
                 yield chunk.text
-        update_memory_task = asyncio.create_task(update_memory(text, full_text, session_id))
+        
+        asyncio.create_task(update_memory(text, full_text, session_id))
     except Exception as e:
         err_str = str(e)
+        print(f"[STREAM_ERROR] {err_str}")
         if "429" in err_str or "quota" in err_str.lower():
             yield "Şu an API kotam doldu, biraz bekleyip tekrar dener misin?"
             return
