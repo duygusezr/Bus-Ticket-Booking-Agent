@@ -61,8 +61,8 @@ Mevcut otobüs bileti platformlarında kullanıcı, güzergah seçimi → tarih 
 │                                                                  │
 │  ┌───────────────┐ ┌───────────────┐ ┌─────────────────────┐    │
 │  │  STT Service  │ │  TTS Service  │ │  Emotion Service    │    │
-│  │  (ElevenLabs  │ │  (ElevenLabs  │ │  (XLM-RoBERTa +    │    │
-│  │   Scribe v1)  │ │   + Edge-TTS) │ │   ACT Token Parse) │    │
+│  │  (Google      │ │  (Microsoft   │ │  (XLM-RoBERTa +    │    │
+│  │   Gemini)     │ │   Edge-TTS)   │ │   ACT Token Parse) │    │
 │  └───────────────┘ └───────────────┘ └─────────────────────┘    │
 │                                                                  │
 │  ┌───────────────┐ ┌───────────────────────────────────────┐    │
@@ -162,19 +162,19 @@ Projede duygu tespiti iki katmanlı bir yaklaşımla yapılır:
 
 ---
 
-### 4. ElevenLabs Scribe v1 — Konuşmadan Metne (STT)
+### 4. Google Gemini — Konuşmadan Metne (STT)
 
 | Özellik | Detay |
 | --- | --- |
-| **Model** | `scribe_v1` (ElevenLabs STT) |
+| **Model** | `gemini-2.0-flash` (Audio-to-Text) |
 | **Kullanım Amacı** | Kullanıcının sesli girdisini metne dönüştürme |
-| **Erişim** | ElevenLabs SDK (API) |
+| **Erişim** | Google GenAI SDK (API) |
 
-**Neden ElevenLabs Scribe?**
+**Neden Gemini STT?**
 
-- **Türkçe STT Kalitesi:** Google Cloud STT ve Whisper'a kıyasla Türkçe karşılaştırmalı testlerde yüksek doğruluk sağlamıştır.  
-- **Tek SDK ile STT + TTS:** Aynı ElevenLabs SDK üzerinden hem konuşma tanıma hem ses sentezi yapılabilir. Bu, ayrı API hesapları / faturalandırma yönetme karmaşıklığını azaltır.  
-- **Entegrasyon Basitliği:** `client.speech_to_text.convert()` ile tek çağrıda transkripsiyon sonucu alınır.
+- **Native Multimodal Desteği:** Gemini 1.5/2.0+ modelleri ses verisini doğrudan (native) işleyebilir. Bu, üçüncü parti STT servislerine olan bağımlılığı azaltır ve gecikmeyi (latency) minimize eder.
+- **Doğal Dil Bağlamı:** Gemini, sadece sesi metne çevirmekle kalmaz, cümlenin gelişinden hangi kelimenin kullanılmış olabileceğini anlama yeteneğine sahiptir (Örn: "Duygu Sezar" gibi özel isimlerde daha başarılıdır).
+- **Tek SDK:** LLM ve STT işlemleri aynı Google API anahtarı ve SDK üzerinden yürütülür.
 
 **STT Sonrası Metin Normalizasyonu:**
 
@@ -193,18 +193,18 @@ Bu sorunlar `stt_service.py` içindeki çok katmanlı normalizasyon pipeline'ı 
 
 ---
 
-### 5. ElevenLabs Multilingual v2 — Metinden Konuşmaya (TTS)
+### 5. Microsoft Edge-TTS — Metinden Konuşmaya (TTS)
 
 | Özellik | Detay |
 | --- | --- |
-| **Model** | `eleven_multilingual_v2` |
-| **Fallback** | Microsoft Edge-TTS (`tr-TR-EmelNeural`) |
+| **Model** | `tr-TR-EmelNeural` (Türkçe) / `en-US-AriaNeural` (İngilizce) |
 | **Kullanım Amacı** | AI yanıtının sesli olarak okunması |
 
-**Neden ElevenLabs + Edge-TTS Fallback?**
+**Neden Edge-TTS?**
 
-- **ElevenLabs:** Piyasadaki en doğal Türkçe TTS motorlarından biridir. Prozodi, vurgu ve duygu aktarımı açısından güçlüdür. Ancak API kotası sınırlıdır.  
-- **Edge-TTS (Fallback):** ElevenLabs kotası dolduğunda veya API hatası oluştuğunda, Microsoft'un ücretsiz Edge-TTS motoru devreye girer. Kalite bir miktar düşer ancak kesintisiz hizmet sağlanır.
+- **Hız ve Lityans:** Microsoft'un Edge tarayıcısı için kullandığı bu motor, gerçek zamanlı yanıtlar için optimize edilmiştir.
+- **Maliyet:** Ücretsiz ve sınırsız bir şekilde kullanılabilmesi projenin sürdürülebilirliğini sağlar.
+- **Kalite:** Nöral ses teknolojisi sayesinde doğal vurgular ve akıcı bir okuma sunar.
 
 **TTS Öncesi Metin Hazırlığı:**
 
@@ -224,8 +224,8 @@ TTS motorlarına gönderilmeden önce metin şu işlemlerden geçer:
 | --- | --- | --- |
 | **LLM Service** | `llm_service.py` | Gemini API ile iletişim, system prompt oluşturma, konuşma geçmişi yönetimi, streaming + non-streaming yanıt üretimi |
 | **Tools** | `tools.py` | Gemini'nin çağırdığı 6 araç fonksiyonu: sefer arama, koltuk doğrulama, TC doğrulama, telefon doğrulama, e-posta doğrulama, rezervasyon yapma |
-| **STT Service** | `stt_service.py` | ElevenLabs Scribe ile ses→metin dönüşümü, Türkçe sayı/e-posta/telefon normalizasyonu |
-| **TTS Service** | `tts_service.py` | ElevenLabs veya Edge-TTS ile metin→ses dönüşümü, Türkçe sayı okunuş hazırlığı |
+| **STT Service** | `stt_service.py` | Google Gemini ile ses→metin dönüşümü, Türkçe sayı/e-posta/telefon normalizasyonu |
+| **TTS Service** | `tts_service.py` | Microsoft Edge-TTS ile metin→ses dönüşümü, Türkçe sayı okunuş hazırlığı |
 | **Emotion Service** | `emotion_service_v2.py` | ACT token ayrıştırma + XLM-RoBERTa tabanlı duygu analizi |
 | **Semantic Cache** | `semantic_cache_service.py` | all-MiniLM-L6-v2 ile vektör tabanlı semantik önbellek, tekrarlı sorgularda LLM bypass |
 | **Memory Service** | `memory_service.py` | Her 10 mesajda bir Gemini ile konuşma özetlemesi, uzun konuşmalarda bağlam penceresi yönetimi |
@@ -271,7 +271,7 @@ Kullanıcı: "Yarın Ankara'dan İstanbul'a gitmek istiyorum"
     └── NLG: "Yarın için şu seferler mevcut..."    │
     │                                              │
     ▼                                              │
-[4] TTS: Yanıtı seslendir (ElevenLabs / Edge-TTS) │
+[4] TTS: Yanıtı seslendir (Microsoft Edge-TTS) │
     │                                              │
     ▼                                              │
 [5] Duygu Analizi: ACT Token → "happy"             │
@@ -364,8 +364,8 @@ Bus Ticket Booking Agent/
     └── services/
         ├── llm_service.py      # Gemini LLM entegrasyonu
         ├── tools.py            # Araç fonksiyonları (sefer, TC, telefon, email, rezervasyon)
-        ├── stt_service.py      # ElevenLabs STT + Türkçe normalizasyon
-        ├── tts_service.py      # ElevenLabs TTS + Edge-TTS fallback
+        ├── stt_service.py      # Google Gemini STT + Türkçe normalizasyon
+        ├── tts_service.py      # Microsoft Edge-TTS
         ├── emotion_service_v2.py  # Duygu analizi (ACT + XLM-RoBERTa)
         ├── semantic_cache_service.py # Semantik önbellek
         └── memory_service.py   # Konuşma özeti / hafıza yönetimi
@@ -396,9 +396,7 @@ pip install -r requirements.txt
 
 ```env
 GOOGLE_API_KEY=your_google_api_key
-ELEVENLABS_API_KEY=your_elevenlabs_api_key
-GEMINI_CHAT_MODEL=gemini-2.5-flash
-ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL
+GEMINI_CHAT_MODEL=gemini-2.1-flash
 DEFAULT_LANG=tr
 PORT=8001
 ```
@@ -426,9 +424,8 @@ Backend `http://localhost:8001` adresinde, frontend ise `http://localhost:3000` 
 | **Python** | 3.10+ | Backend dili |
 | **FastAPI** | — | REST API + WebSocket framework |
 | **Uvicorn** | — | ASGI sunucu |
-| **google-genai** | — | Google Gemini API SDK |
-| **ElevenLabs SDK** | — | STT (Scribe) + TTS |
-| **edge-tts** | — | TTS Fallback (Microsoft) |
+| **google-genai** | — | Google Gemini API SDK (LLM + STT) |
+| **edge-tts** | — | TTS Motoru (Microsoft) |
 | **transformers** | HuggingFace | XLM-RoBERTa duygu modeli |
 | **sentence-transformers** | — | Semantik cache embedding |
 | **torch** | PyTorch | Model inference |

@@ -1,15 +1,8 @@
 import io
 import re
-from elevenlabs.client import ElevenLabs
 from config import settings
 import google.genai as genai
 from google.genai import types
-
-def get_eleven_client():
-    """Anahtari her seferinde guncel ayarlardan alarak client olusturur."""
-    if settings.ELEVENLABS_API_KEY and "your_" not in settings.ELEVENLABS_API_KEY.lower():
-        return ElevenLabs(api_key=settings.ELEVENLABS_API_KEY)
-    return None
 
 
 def _normalize_stt_text(raw_text: str) -> str:
@@ -23,7 +16,7 @@ def _normalize_stt_text(raw_text: str) -> str:
     text = re.sub(r"\(([^)]*)\)", " ", text)  # remove parenthesized cues
     text = re.sub(r"\s+", " ", text).strip()
 
-    # Kendi kendine tekrar eden kısa metinleri temizleme (ElevenLabs/STT halüsinasyonu)
+    # Kendi kendine tekrar eden kısa metinleri temizleme (STT halüsinasyonu)
     # 1. Karakter bazlı tam tekrar (Örn: "uygusazar.uygusazar.")
     if len(text) > 3 and len(text) % 2 == 0:
         half = len(text) // 2
@@ -516,9 +509,7 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
     else:
         mime_type = "audio/webm"
 
-    client = get_eleven_client()
-    # 1. Skip ElevenLabs (Bypassed for performance optimization)
-    # 2. Try Gemini (Primary)
+    # 1. Try Gemini (Primary)
     try:
         gemini_result = await _transcribe_gemini_fallback(audio_bytes, mime_type, lang)
         # Apply normalization to Gemini result too

@@ -1,7 +1,7 @@
 import base64
 import os
 import re
-from elevenlabs.client import ElevenLabs
+
 from config import settings
 import edge_tts
 import asyncio
@@ -81,11 +81,7 @@ def _prepare_turkish_tts_text(text: str) -> str:
     return result
 
 
-def get_eleven_client():
-    """Anahtari her seferinde guncel ayarlardan alarak client olusturur."""
-    if settings.ELEVENLABS_API_KEY and "your_" not in settings.ELEVENLABS_API_KEY.lower():
-        return ElevenLabs(api_key=settings.ELEVENLABS_API_KEY)
-    return None
+
 
 async def generate_tts_edge(text: str, lang: str) -> str:
     """
@@ -137,8 +133,7 @@ async def generate_tts(text: str, lang: str | None = None, voice: str = "default
     if lang == "tr":
         clean_text = _prepare_turkish_tts_text(clean_text)
     
-    # 1. Skip ElevenLabs (Bypassed for performance optimization)
-    # 2. Try Edge-TTS (Primary)
+    # Try Edge-TTS (Primary)
     try:
         return await generate_tts_edge(clean_text, lang)
     except Exception as e:

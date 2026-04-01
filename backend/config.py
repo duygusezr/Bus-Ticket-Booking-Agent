@@ -88,14 +88,12 @@ Every message must start with this token format:
 
 
 class Settings:
-    ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
     SYSTEM_PROMPT: str = SYSTEM_PROMPT
     SYSTEM_PROMPT_EN: str = SYSTEM_PROMPT_EN
     DEFAULT_LANG: str = os.getenv("DEFAULT_LANG", "tr")
     PORT: int = int(os.getenv("PORT", 8001))
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
     GEMINI_CHAT_MODEL: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
-    ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
     CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "*").split(",")
 
 settings = Settings()
