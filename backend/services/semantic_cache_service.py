@@ -24,6 +24,7 @@ class SemanticCache:
     threshold: float
     max_items: int
     cache_file: str
+    ENABLED: bool = False # Set to False as per performance optimization request
     _instance = None
     
     def __new__(cls):
@@ -100,9 +101,16 @@ class SemanticCache:
 
     def search(self, query: str) -> Optional[Dict[str, Any]]:
         """Searches for a similar query in the cache."""
+        if not getattr(self, "ENABLED", True):
+            return None
+
         import re
         clean_query = re.sub(r"\[SİSTEM BİLGİSİ.*?\]", "", query).strip()
         
+        # Skip small inputs (e.g., "Yes", "8", "12") to save embedding time.
+        if len(clean_query) < 5:
+            return None
+            
         if not self.cache:
             return None
             
@@ -139,6 +147,9 @@ class SemanticCache:
 
     def add(self, query: str, text: str, audio: str, emotion: str):
         """Adds a new query-response pair to the cache."""
+        if not self.ENABLED:
+            return
+            
         import re
         clean_query = re.sub(r"\[SİSTEM BİLGİSİ.*?\]", "", query).strip()
         

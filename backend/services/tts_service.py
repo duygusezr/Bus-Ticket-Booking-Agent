@@ -137,36 +137,8 @@ async def generate_tts(text: str, lang: str | None = None, voice: str = "default
     if lang == "tr":
         clean_text = _prepare_turkish_tts_text(clean_text)
     
-    client = get_eleven_client()
-    
-    # 1. Try ElevenLabs
-    if client:
-        try:
-            voice_id = settings.ELEVENLABS_VOICE_ID or "EXAVITQu4vr4xnSDxMaL"
-            last_err = None
-            for attempt in range(2):
-                try:
-                    audio_iterator = client.text_to_speech.convert(
-                        text=clean_text,
-                        voice_id=voice_id,
-                        model_id="eleven_multilingual_v2",
-                        output_format="mp3_44100_128",
-                    )
-                    audio_content = b"".join(audio_iterator)
-                    if not audio_content:
-                        raise Exception("ElevenLabs empty audio.")
-                    return base64.b64encode(audio_content).decode("utf-8")
-                except Exception as e:
-                    last_err = e
-                    if "disconnected" in str(e).lower() or "connection" in str(e).lower():
-                        await asyncio.sleep(1)
-                    else:
-                        break
-            raise last_err
-        except Exception as e:
-            print(f"[TTS] ElevenLabs failed ({str(e)}). Falling back to Edge-TTS...")
-
-    # 2. Try Edge-TTS (Fallback or Primary if no ElevenLabs key)
+    # 1. Skip ElevenLabs (Bypassed for performance optimization)
+    # 2. Try Edge-TTS (Primary)
     try:
         return await generate_tts_edge(clean_text, lang)
     except Exception as e:

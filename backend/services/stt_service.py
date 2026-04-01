@@ -481,44 +481,8 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
         mime_type = "audio/webm"
 
     client = get_eleven_client()
-    
-    # 1. Try ElevenLabs Scribe
-    if client:
-        try:
-            print(f"DEBUG: ElevenLabs SDK STT (Scribe) çağrılıyor... ({len(audio_bytes)} byte)")
-            audio_file = io.BytesIO(audio_bytes)
-
-            resp = client.speech_to_text.convert(
-                file=(filename, audio_file, mime_type),
-                model_id="scribe_v1",
-                language_code=lang,
-            )
-
-            raw_text = str(getattr(resp, "text", "") or getattr(resp, "transcript", "") or "")
-            print(f"DEBUG: Ham transkripsiyon (ElevenLabs): '{raw_text}'")
-            
-            # Adım 1: ASR gürültüsünü temizle
-            clean_text = _normalize_stt_text(raw_text)
-            
-            # Adım 2: Bağlam tespiti ve uygun normalize
-            if _detect_email_context(clean_text):
-                from services.tools import _normalize_email_input
-                clean_text = _normalize_email_input(clean_text)
-            elif _detect_numeric_context(clean_text):
-                clean_text = _normalize_numeric_input(clean_text)
-            else:
-                clean_text = _convert_turkish_number_words(clean_text)
-                clean_text = _collapse_numeric_sequences(clean_text)
-            
-            return {
-                "text": clean_text,
-                "lang": getattr(resp, "language_code", lang)
-            }
-        except Exception as e:
-            err_msg = str(e).lower()
-            print(f"[STT] ElevenLabs failed ({err_msg}). Falling back to Gemini...")
-
-    # 2. Try Gemini Fallback
+    # 1. Skip ElevenLabs (Bypassed for performance optimization)
+    # 2. Try Gemini (Primary)
     try:
         gemini_result = await _transcribe_gemini_fallback(audio_bytes, mime_type, lang)
         # Apply normalization to Gemini result too

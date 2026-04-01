@@ -8,7 +8,7 @@ import json
 
 from services.llm_service import generate_chat_response, generate_chat_response_stream
 from services.tts_service import generate_tts
-from services.emotion_service_v2 import analyze_sentiment_v2
+# from services.emotion_service_v2 import analyze_sentiment_v2  # Removed for performance
 from services.semantic_cache_service import semantic_cache
 from config import settings
 from services.tools import validate_seat_selection, validate_phone_number, validate_email_address
@@ -209,12 +209,13 @@ async def chat_endpoint(request: ChatRequest):
         audio_base64 = await generate_tts(response_text, lang)
         t_tts = time.perf_counter()
 
-        emotion = await analyze_sentiment_v2(response_text)
-        t_emo = time.perf_counter()
+        # [OPTIMIZATION] Skip or background emotion in REST to avoid blocking
+        emotion = "neutral" 
+        
+        # Optionally add to cache in background (if we ever re-enable cache)
+        # semantic_cache.add(processed_text, response_text, audio_base64, emotion)
 
-        semantic_cache.add(processed_text, response_text, audio_base64, emotion)
-
-        print(f"--- [REST LATENCY] --- LLM: {t_llm-t_start:.3f}s | TTS: {t_tts-t_llm:.3f}s | TOTAL: {t_emo-t_start:.3f}s")
+        print(f"--- [REST LATENCY] --- LLM: {t_llm-t_start:.3f}s | TTS: {t_tts-t_llm:.3f}s | TOTAL: {time.perf_counter()-t_start:.3f}s")
         return {"text": response_text, "audio": audio_base64, "emotion": emotion}
 
     except Exception as e:
@@ -293,10 +294,8 @@ async def websocket_chat(websocket: WebSocket):
                 print(f"[WS SEMANTIC HIT] Time: {time.perf_counter() - t_ws_start:.3f}s")
                 continue
 
-            # 1. Kullanıcı duygu analizi
-            user_msg_emotion = await analyze_sentiment_v2(processed_text)
-            print(f"[WS] User Emotion Latency: {time.perf_counter() - t_ws_start:.3f}s")
-            await websocket.send_json({"type": "emotion", "content": user_msg_emotion})
+            # 1. Duygu analizi kaldırıldı (Performans için)
+            # await websocket.send_json({"type": "emotion", "content": "neutral"})
 
             try:
                 # --- GEMINI TEK ADIM: Logic + Tool Calling + Doğal Dil ---
@@ -317,17 +316,8 @@ async def websocket_chat(websocket: WebSocket):
                 t_tts_end = time.perf_counter()
                 print(f"[WS] TTS Latency: {t_tts_end - t_tts_start:.3f}s")
 
-                # Bot duygu analizi
-                t_emo_start = time.perf_counter()
-                bot_msg_emotion = await analyze_sentiment_v2(full_response)
-                t_emo_end = time.perf_counter()
-                print(f"[WS] Bot Emotion Latency: {t_emo_end - t_emo_start:.3f}s")
-
                 await websocket.send_json({"type": "audio", "content": audio_base64})
-                await websocket.send_json({"type": "emotion", "content": bot_msg_emotion})
-
-                semantic_cache.add(processed_text, full_response, audio_base64, bot_msg_emotion)
-
+                await websocket.send_json({"type": "emotion", "content": "neutral"})
                 await websocket.send_json({"type": "done"})
 
             except Exception as e:
