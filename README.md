@@ -17,6 +17,8 @@ Mevcut otobüs bileti platformlarında kullanıcı, güzergah seçimi → tarih 
 - *"Yarın Ankara'dan İstanbul'a gitmek istiyorum"* → Sistem uygun seferleri otomatik bulur
 - *"5 numaralı koltuğu istiyorum"* → Koltuk uygunluğunu kontrol eder
 - *"TC'm 12345678910"* → Algoritmik doğrulamayı anında yapar
+- **Çok Dilli Destek:** TR/EN butonları ile anında dil değiştirme (Sistemsel talimatlar ve onay mekanizmaları her iki dil için de tamamen optimize edilmiştir)
+- **Mobil Uyumlu:** Telefon ve tabletler için optimize edilmiş özel dikey görünüm ve akıllı klavye yönetimi
 - Tüm bilgiler toplandığında özet sunar ve onay sonrası rezervasyonu tamamlar
 
 ---
@@ -105,6 +107,7 @@ Gemini, projede **tek LLM** olarak çalışır ve şu görevlerin tamamını üs
 4. Araç sonuçlarını insani bir dilde kullanıcıya aktarma (NLG)
 5. Konuşma özetleme (Memory Service)
 6. ACT token üretimi (duygu bilgisi)
+7. **Çok Dilli (Multilingual) Destek:** Seçilen dile göre dinamik `SYSTEM_PROMPT` ve teknik yönlendirme (whisper) yönetimi.
 
 ---
 
@@ -320,6 +323,11 @@ Chat router'da, LLM'in gereksiz tur kaybetmesini önlemek için belirli bağlaml
 ### Konuşma Hafızası (Memory Service)
 
 Uzun konuşmalarda Gemini'nin token bağlam penceresi dolabilir. Bu sorunu çözmek için her 10 mesajda bir Gemini ile konuşmanın özeti üretilir. Sonraki mesajlarda bu özet system prompt'a eklenir, böylece "unutkanlık" önlenir.
+
+### WebSocket Sağlık ve Hata Yönetimi
+
+- **Railway Healthcheck & HMR:** Geliştirme araçlarının (Vite HMR) ve Railway sağlık kontrollerinin log spam'ini önlemek için `/ws` altında bir dummy endpoint bulunur.
+- **JSON Fallback:** WebSocket üzerinden gelen bozuk veya JSON olmayan veriler sistemin çökmesini engellemek için try-except bloklarıyla yakalanır.
 
 ---
 
