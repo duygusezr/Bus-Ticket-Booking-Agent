@@ -28,22 +28,45 @@ def _extract_last_assistant_text(history: List[Dict[str, str]]) -> str:
             return str(msg.get("content", "") or "")
     return ""
 
-def _append_sefer_id_context(text: str, history: List[Dict[str, str]]) -> str:
+def _inject_ground_truth_context(text: str, history: List[Dict[str, str]]) -> str:
     """
-    Appends the active trip ID to the user's message as a hidden system injection
-    to help the LLM remember the selected trip during confirmation.
+    Scans entire conversation history for technical travel data (Route, Date, Sefer ID, Seat) 
+    and injects it as a hidden [GROUND TRUTH] block to ensure the LLM summary is accurate.
     """
-    latest_sefer_id = None
+    g_id = None
+    g_route = None
+    g_date = None
+    g_seat = None
+
     for m in history:
-        # Catch both Sefer ID (TR) and Trip ID (EN)
-        match = re.search(r"(?:Sefer|Trip)\s*[_]?ID[:=\s]*(\d+)", str(m.get("content", "")), flags=re.IGNORECASE)
-        if match:
-            latest_sefer_id = match.group(1)
-            
-    if latest_sefer_id:
-        if "Aktif sefer_id=" not in text:
-            # We use a neutral tag but helpful hint
-            return text + f" [SİSTEM BİLGİSİ: Aktif sefer_id={latest_sefer_id}]"
+        content = str(m.get("content", ""))
+        # 1. Sefer ID
+        id_match = re.search(r"(?:Sefer|Trip)\s*(?:No|ID)[:=\s]*(\d+)", content, flags=re.IGNORECASE)
+        if id_match: g_id = id_match.group(1)
+
+        # 2. Route (Nereden Nereye)
+        route_match = re.search(r"(?:Güzergah|Route|Trip)[:\s]*([a-zA-ZçğıöşüÇĞİÖŞÜ\s]+->[a-zA-ZçğıöşüÇĞİÖŞÜ\s]+|[a-zA-ZçğıöşüÇĞİÖŞÜ\s]+to[a-zA-ZçğıöşüÇĞİÖŞÜ\s]+)", content, flags=re.IGNORECASE)
+        if route_match: g_route = route_match.group(1).strip()
+
+        # 3. Date
+        date_match = re.search(r"(?:Tarih|Date)[:\s]*(\d{1,2}[\.\-/]\d{1,2}[\.\-/]\d{4}|\d{4}-\d{2}-\d{2})", content, flags=re.IGNORECASE)
+        if date_match: g_date = date_match.group(1)
+
+        # 4. Seat
+        seat_match = re.search(r"(?:Koltuk|Seat)[:\s]*(\d+)", content, flags=re.IGNORECASE)
+        if seat_match: g_seat = seat_match.group(1)
+
+    # 5. Build Ground Truth Block
+    truth = []
+    if g_id: truth.append(f"Sefer ID={g_id}")
+    if g_route: truth.append(f"Route={g_route}")
+    if g_date: truth.append(f"Date={g_date}")
+    if g_seat: truth.append(f"Seat={g_seat}")
+
+    if truth:
+        truth_str = ", ".join(truth)
+        if f"[GROUND TRUTH: {truth_str}]" not in text:
+            return text + f" [GROUND TRUTH: {truth_str}]"
     return text
 
 
@@ -191,7 +214,7 @@ async def chat_endpoint(request: ChatRequest):
 
         # LLM'in bu sonucu görüp bir sonraki adımı otomatik sorması için metne ekle
         processed_text = request.text + system_injection
-        processed_text = _append_sefer_id_context(processed_text, request.history)
+        processed_text = _inject_ground_truth_context(processed_text, request.history)
 
         cached_match = semantic_cache.search(processed_text)
         if cached_match:
@@ -282,7 +305,7 @@ async def websocket_chat(websocket: WebSocket):
                         system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya bilgilerin ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon yapma!]"
 
             processed_text = text + system_injection
-            processed_text = _append_sefer_id_context(processed_text, history)
+            processed_text = _inject_ground_truth_context(processed_text, history)
 
             # 0. Semantic Cache
             cached_ws_match = semantic_cache.search(processed_text)

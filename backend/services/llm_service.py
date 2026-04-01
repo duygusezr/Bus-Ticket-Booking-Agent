@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import AsyncGenerator, List, Dict
+import asyncio
 import google.genai as genai
 from google.genai import types
 from config import settings
@@ -64,7 +65,8 @@ async def generate_chat_response(text: str, history: List[Dict[str, str]], lang:
         )
         response = await chat.send_message(text)
         result_text = response.text or ""
-        update_memory(text, result_text, session_id)
+        # Hafıza güncellemeyi arka plana at (Non-blocking)
+        asyncio.create_task(update_memory(text, result_text, session_id))
         return result_text
     except Exception as e:
         err_str = str(e)
@@ -97,7 +99,7 @@ async def generate_chat_response_stream(text: str, history: List[Dict[str, str]]
             if chunk.text:
                 full_text += chunk.text
                 yield chunk.text
-        update_memory(text, full_text, session_id)
+        update_memory_task = asyncio.create_task(update_memory(text, full_text, session_id))
     except Exception as e:
         err_str = str(e)
         if "429" in err_str or "quota" in err_str.lower():

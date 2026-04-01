@@ -1,14 +1,12 @@
-"""
-Hafıza servisi — google.genai yeni paketi ile.
-Her N mesajda bir Gemini ile özet üretir, RAM'de tutar.
-"""
+import asyncio
+import time
 import google.genai as genai
 from google.genai import types
 from config import settings
 from typing import Dict, List
 
 _sessions: Dict[str, dict] = {}
-SUMMARIZE_EVERY = 10
+SUMMARIZE_EVERY = 5  # Re-summarize more frequently in background
 
 
 def _get_session(session_id: str) -> dict:
@@ -21,36 +19,63 @@ def get_current_summary(session_id: str = "default") -> str:
     return _get_session(session_id)["summary"]
 
 
-def update_memory(user_input: str, ai_response: str, session_id: str = "default"):
+async def update_memory(user_input: str, ai_response: str, session_id: str = "default"):
+    """
+    Hafızayı günceller. Karakter sayısı çok az ise özetleme tetiklemez.
+    """
     session = _get_session(session_id)
     session["buffer"].append({"user": user_input, "ai": ai_response})
     session["total"] += 1
+    
+    # 5 karakterden kısa girişi skip et (örn: "evet", "12")
+    if len(user_input.strip()) < 5:
+        return
+
     if len(session["buffer"]) >= SUMMARIZE_EVERY:
-        _summarize(session, session_id)
+        # Arka planda çalıştır (Non-blocking)
+        asyncio.create_task(_summarize(session, session_id))
 
 
-def _summarize(session: dict, session_id: str):
+async def _summarize(session: dict, session_id: str):
+    """
+    Gemini ile arka planda (asenkron) özet üretir.
+    """
+    t_mem_start = time.perf_counter()
     try:
         api_key = settings.GOOGLE_API_KEY
-        print(f"[MEMORY DEBUG] Summary key check: {api_key[:10]}...")
-        client = genai.Client(api_key=api_key)  # rotasyon sistemini kullanır
+        client = genai.Client(api_key=api_key)
+        
         buffer_text = "\n".join(
             f"Kullanıcı: {m['user']}\nELA: {m['ai']}" for m in session["buffer"]
         )
         prev = f"Önceki özet:\n{session['summary']}\n\n" if session["summary"] else ""
-        lang_instr = "English" if "i want to go" in buffer_text.lower() or "hello" in buffer_text.lower() else "Turkish"
+        
+        # Dil tespiti ve yönerge
+        is_en = any(word in buffer_text.lower() for word in ["hello", "i want to", "ticket", "route", "trip"])
+        lang_instr = "English" if is_en else "Turkish"
+        
         prompt = (
             f"{prev}New messages:\n{buffer_text}\n\n"
-            f"Summarize the conversation above in 3-5 sentences in {lang_instr}. Only write the summary."
+            f"Summarize the conversation above in 3-5 sentences in {lang_instr}. "
+            "IMPORTANT: Preserve exact technical details: cities, dates, Sefer IDs, Seat numbers. "
+            "NEVER use placeholders like '12345' or generic cities."
         )
-        response = client.models.generate_content(
+        
+        # Asenkron çağrı (aio)
+        response = await client.aio.models.generate_content(
             model=settings.GEMINI_CHAT_MODEL,
             contents=prompt,
         )
+        
         text = response.text
-        session["summary"] = text.strip() if text else ""
-        session["buffer"] = []
-        print(f"[MEMORY] Özet güncellendi ({session_id}): {len(session['summary'])} karakter")
+        if text:
+            session["summary"] = text.strip()
+            session["buffer"] = []
+            
+        t_mem_end = time.perf_counter()
+        print(f"[MEMORY] Özet güncellendi ({session_id}) | Latency: {t_mem_end - t_mem_start:.3f}s | Length: {len(session['summary'])}")
+        
     except Exception as e:
-        print(f"[MEMORY] Özetleme hatası: {e}")
+        print(f"[MEMORY ERROR] Özetleme hatası: {e}")
+        # Hata durumunda buffer'ı temizle ki bloklama yapmasın
         session["buffer"] = []
