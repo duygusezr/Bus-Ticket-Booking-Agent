@@ -348,18 +348,26 @@ def validate_seat_selection(user_input: str, available_seats_str: str) -> str:
     
     text = str(user_input).strip().lower()
     
-    # Türkçe sayı -> Rakam dönüştürücü (Daha kapsamlı)
-    tr_to_num = {
+    # Word -> Number converter (Supports both Turkish and English)
+    word_to_num = {
+        # Turkish
         "bir": 1, "iki": 2, "üç": 3, "uc": 3, "dört": 4, "dort": 4,
         "beş": 5, "bes": 5, "altı": 6, "alti": 6, "yedi": 7,
         "sekiz": 8, "dokuz": 9, "on": 10, "onbir": 11, "on bir": 11,
-        "oniki": 12, "on iki": 12, "onüç": 13, "on üç": 13
+        "oniki": 12, "on iki": 12, "onüç": 13, "on üç": 13,
+        # English
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+        "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+        "twenty one": 21, "twenty-one": 21, "twenty two": 22, "twenty-two": 22,
+        "thirty": 30, "forty": 40, "fifty": 50
     }
     
     extracted_seat = None
     
-    # 1. Önce Türkçe yazıyla kontrol et
-    for word, num in tr_to_num.items():
+    # 1. First check with word-based input (case insensitive)
+    for word, num in word_to_num.items():
         if word in text:
             extracted_seat = num
             break

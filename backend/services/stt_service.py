@@ -297,6 +297,31 @@ def _convert_turkish_number_words(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
+def _convert_english_number_words(text: str) -> str:
+    """
+    Convert common English number words into digits.
+    Examples: "eight" -> "8", "twelve" -> "12".
+    """
+    if not text:
+        return ""
+
+    t = text.lower()
+    
+    # Word -> Number map
+    word_map = {
+        "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+        "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+        "eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14", "fifteen": "15",
+        "sixteen": "16", "seventeen": "17", "eighteen": "18", "nineteen": "19", "twenty": "20"
+    }
+
+    # Sort keys by length (longest first) to prevent partial matching (though not an issue here)
+    for k, v in sorted(word_map.items(), key=lambda x: len(x[0]), reverse=True):
+        t = re.sub(rf"\b{re.escape(k)}\b", v, t)
+
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def _collapse_numeric_sequences(text: str) -> str:
     """
     If transcript is mostly numeric chunks (e.g. "37 50 60 12 74"),
@@ -494,7 +519,10 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
         elif _detect_numeric_context(text_from_gemini):
             text_from_gemini = _normalize_numeric_input(text_from_gemini)
         else:
-            text_from_gemini = _convert_turkish_number_words(text_from_gemini)
+            if lang == "en":
+                text_from_gemini = _convert_english_number_words(text_from_gemini)
+            else:
+                text_from_gemini = _convert_turkish_number_words(text_from_gemini)
             text_from_gemini = _collapse_numeric_sequences(text_from_gemini)
             
         return {

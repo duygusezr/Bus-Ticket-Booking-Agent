@@ -492,14 +492,14 @@ function updateEyeMovement(elapsed, delta) {
 // Tüm duyguları sıfırlar ve belirtilen duyguyu 1.0 yapar
 // ============================================================
 function setEmotion(emotion) {
+    // Performans ve kullanıcı isteği üzerine tüm duygular nötrlendi
     for (const key in expressionTargets) expressionTargets[key] = 0;
-    if (expressionTargets.hasOwnProperty(emotion)) expressionTargets[emotion] = 1.0;
-    else expressionTargets.neutral = 1.0;
+    expressionTargets.neutral = 1.0;
 
-    console.log(`[EMOTION] setEmotion çağrıldı → ${emotion}`, JSON.stringify(expressionTargets));
+    // console.log(`[EMOTION] setEmotion force neutral`);
 
     // UI Güncelle
-    if (emotionBadge) emotionBadge.textContent = emotionNamesTr[emotion] || 'Nötr';
+    if (emotionBadge) emotionBadge.textContent = 'Nötr';
     updateEmotionChart();
 }
 
@@ -509,26 +509,8 @@ function setEmotion(emotion) {
 // ============================================================
 function processActTokens(text) {
     if (!text) return "";
-    const actRegex = /<\|ACT:(.*?)\|>/gs; // 's' flagı ile multiline match
-    let match, lastEmotion = null;
-    while ((match = actRegex.exec(text)) !== null) {
-        try {
-            const inner = match[1].trim();
-            // JSON format: "emotion":{"name":"happy",...}
-            const nameMatch = inner.match(/"name"\s*:\s*"(\w+)"/);
-            if (nameMatch) {
-                lastEmotion = nameMatch[1].toLowerCase();
-            } else {
-                // Basit format: happy
-                const simple = inner.trim().toLowerCase();
-                if (simple.match(/^\w+$/)) lastEmotion = simple;
-            }
-        } catch (e) { console.warn("ACT parse hatası:", e); }
-    }
-    if (lastEmotion) {
-        console.log(`[EMOTION] Frontend ACT → ${lastEmotion}`);
-        setEmotion(lastEmotion);
-    }
+    // Duygu tokenlarını temizle ve nötr ayarla
+    setEmotion('neutral');
     return text.replace(/<\|ACT:.*?\|>/gs, '').replace(/<\|DELAY:.*?\|>/g, '').trim();
 }
 
@@ -536,28 +518,9 @@ function processActTokens(text) {
 // YEREL DUYGU ANALİZİ (KEYWORD BAZLI)
 // API yanıtı gelmeden önce metni hızlıca analiz eder
 // ============================================================
-let emotionTimeout;
 function handleEmotionsLocal(text) {
-    if (text.includes('<|ACT:')) return; // ACT tokenı varsa keyword analizini atla
-    const lt = text.toLowerCase();
-    if (emotionTimeout) clearTimeout(emotionTimeout);
-
-    const happyW = ['😊', '😄', '🥰', 'mutlu', 'harika', 'sevindim', 'güzel', 'iyi', 'evet', 'teşekkür', 'memnun', 'sevdim', 'tatlı', 'komik', 'şaka', 'lol', 'hahaha', 'seviyorum', 'bravo', 'süper'];
-    const sadW = ['😔', '😢', '😭', 'üzgün', 'malesef', 'kötü', 'hayır', 'üzüldüm', 'maalesef', 'sorun', 'yalnız', 'hüzün', 'kaybettim', 'özledim', 'ayrılık'];
-    const angryW = ['😠', '😡', 'kızgın', 'sinir', 'dur', 'yeter', 'öfke', 'nefret', 'berbat', 'saçma', 'aptal', 'bıktım', 'olmaz'];
-    const surprisedW = ['😲', '😮', 'inanılmaz', 'nasıl', 'gerçekten', 'wow', 'vaov', 'şaşırtıcı', 'bekle', 'hayret', 'beklemiyordum'];
-    const relaxedW = ['😌', 'rahat', 'sakin', 'uyku', 'dinlen', 'huzur', 'tamam', 'peki', 'olur', 'anladım'];
-
-    let detected = 'neutral';
-    if (happyW.some(w => lt.includes(w))) detected = 'happy';
-    else if (sadW.some(w => lt.includes(w))) detected = 'sad';
-    else if (angryW.some(w => lt.includes(w))) detected = 'angry';
-    else if (surprisedW.some(w => lt.includes(w))) detected = 'surprised';
-    else if (relaxedW.some(w => lt.includes(w))) detected = 'relaxed';
-
-    setEmotion(detected);
-    // 9 saniye sonra nötre dön — artırırsan ifade daha uzun süre kalır
-    emotionTimeout = setTimeout(() => setEmotion('neutral'), 9000);
+    // Tüm duygular nötr kalacak
+    setEmotion('neutral');
 }
 
 // AI DUYGU ANALİZİ (ESKİ - KALDIRILDI)
@@ -660,7 +623,7 @@ function initWebSocket() {
             await playBase64Audio(data.content);
         }
         else if (data.type === 'emotion') {
-            setEmotion(data.content);
+            setEmotion('neutral');
         }
         else if (data.type === 'done') {
             isSending = false;
@@ -675,7 +638,7 @@ function initWebSocket() {
             isSending = false;
             if (subtitle) subtitle.textContent = "Hata: " + data.content;
             addToHistoryPanel('ai', "Hata: " + data.content);
-            setEmotion('sad');
+            setEmotion('neutral');
         }
     };
 
@@ -877,7 +840,7 @@ micBtn.addEventListener('mousedown', async () => {
         micBtn.classList.add('recording');
         subtitle.textContent = "Dinliyorum...";
         isListening = true;
-        setEmotion('relaxed'); // Dinlerken sakin ifade
+        setEmotion('neutral'); // UX ifadesi nötr yapıldı
     } catch (err) {
         subtitle.textContent = "Lütfen mikrofon izni verin.";
     }
@@ -919,7 +882,7 @@ async function sendMessage() {
     chatInput.value = '';
 
     subtitle.textContent = translations[currentLang].thinking;
-    setEmotion('think'); // Düşünüyor ifadesi
+    setEmotion('neutral'); // Düşünüyor ifadesi nötr yapıldı
     currentFullResponse = ""; // Yeni stream için sıfırla
 
     const payload = JSON.stringify({
