@@ -379,11 +379,11 @@ canvas#canvas {
         box-shadow: none;
     }
 
-    /* Avatar Paneli: Sabit minimum yükseklik ama klavye açılınca esner */
+    /* Avatar Paneli: Daha uzun yapılarak modelin net görünmesi sağlandı */
     .avatar-panel {
         flex: none;
-        height: 25%; /* Ekranın üst çeyreği */
-        min-height: 180px; 
+        height: 35vh; /* Ekranın %35'i (Daha geniş) */
+        min-height: 260px; /* Sıkışmayı önleyen asgari yükseklik */
         border-left: none;
         border-bottom: 2px solid #eee;
     }
@@ -414,24 +414,25 @@ canvas#canvas {
         box-shadow: 0 4px 10px rgba(0,0,0,0.15);
     }
 
-    /* Avatar Başlık Metni (EN/TR Butonuyla çakışmasın diye aşağı kaydırıldı) */
+    /* Avatar Başlık Metni (Avatarın Yüzünü Kapatmaması İçin Alta Alındı) */
     .avatar-header-text {
-        top: 65px; 
+        top: auto;
+        bottom: 12px; 
     }
 
     .avatar-header-text h3 {
-        font-size: 24px;
+        font-size: 20px;
     }
 
     .avatar-header-text h3 b {
-        font-size: 13px;
-        height: 20px;
+        font-size: 11px;
+        height: 18px;
+        padding: 2px 8px;
     }
 
+    /* Mobilde yer kaplamaması adına alt başlığı gizliyoruz, avatarın kendini göstermesi daha önemli */
     .avatar-header-text p {
-        font-size: 12px;
-        padding: 4px 15px;
-        margin-top: 8px;
+        display: none;
     }
 
     .menu-icon {
@@ -486,12 +487,12 @@ canvas#canvas {
 @media screen and (max-width: 480px) {
     /* Daha küçük ekranlar için ince ayar */
     .avatar-panel {
-        min-height: 150px;
+        min-height: 220px;
     }
     .avatar-header-text {
-        top: 55px;
+        bottom: 10px;
     }
     .avatar-header-text h3 {
-        font-size: 20px;
+        font-size: 18px;
     }
 }
