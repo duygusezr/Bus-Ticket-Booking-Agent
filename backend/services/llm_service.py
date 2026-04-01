@@ -21,20 +21,25 @@ def _build_history_gemini(history: List[Dict[str, str]]) -> list:
 
 
 def _build_system_prompt(lang: str, summary: str) -> str:
-    # Sisteme bugünün tarihini enjekte et (Örn: 2026-03-26)
+    # Sisteme bugünün tarihini enjekte et
     today_str = datetime.now().strftime("%Y-%m-%d")
     current_time_str = datetime.now().strftime("%H:%M")
     
-    system_prompt = f"BUGÜNÜN TARİHİ: {today_str}\nŞU ANKİ SAAT: {current_time_str}\n\n"
-    system_prompt += settings.SYSTEM_PROMPT
+    prefix = f"BUGÜNÜN TARİHİ: {today_str}\nŞU ANKİ SAAT: {current_time_str}\n\n"
     
     if lang == "en":
-        system_prompt += "\n\n## STRICT LANGUAGE RULE\nYou MUST reply ONLY in English. If the user writes in Turkish or any other language, do NOT answer in that language. Instead, kindly say: 'I'd love to chat, but could you speak English with me here?'"
+        system_prompt = prefix + settings.SYSTEM_PROMPT_EN
+        system_prompt += "\n\n## STRICT LANGUAGE RULE\nYou MUST reply ONLY in English. Use English for all responses."
     else:
-        system_prompt += "\n\n## STRICT LANGUAGE RULE\nYou MUST reply ONLY in Turkish. If the user writes in English or any other language, do NOT answer in that language. Instead, kindly say: 'Seninle konuşmak isterim ama burada Türkçe konuşur musun?'"
+        system_prompt = prefix + settings.SYSTEM_PROMPT
+        system_prompt += "\n\n## STRICT LANGUAGE RULE\nCevaplarını SADECE Türkçe olarak vermelisin. Başka dilde konuşma."
     
     if summary:
-        system_prompt += f"\n\n--- GEÇMİŞ KONUŞMALARIN ÖZETİ ---\n{summary}\n---------------------------------"
+        if lang == "en":
+            system_prompt += f"\n\n--- SUMMARY OF PREVIOUS CONVERSATION ---\n{summary}\n---------------------------------"
+        else:
+            system_prompt += f"\n\n--- GEÇMİŞ KONUŞMALARIN ÖZETİ ---\n{summary}\n---------------------------------"
+            
     return system_prompt
 
 

@@ -30,18 +30,20 @@ def _extract_last_assistant_text(history: List[Dict[str, str]]) -> str:
 
 def _append_sefer_id_context(text: str, history: List[Dict[str, str]]) -> str:
     """
-    Oluşabilecek unutkanlıkları (context loss) önlemek için, kullanıcının
-    her mesajının sonuna görünmez bir SİSTEM BİLGİSİ olarak aktif sefer_id'yi fısıldar.
-    Bu, LLM'in özet metninden sonra 'onaylıyorum' dendiğinde sefer_id'yi bilmesini sağlar.
+    Appends the active trip ID to the user's message as a hidden system injection
+    to help the LLM remember the selected trip during confirmation.
     """
     latest_sefer_id = None
     for m in history:
-        match = re.search(r"Sefer\s*[_]?ID[:=\s]*(\d+)", str(m.get("content", "")), flags=re.IGNORECASE)
+        # Catch both Sefer ID (TR) and Trip ID (EN)
+        match = re.search(r"(?:Sefer|Trip)\s*[_]?ID[:=\s]*(\d+)", str(m.get("content", "")), flags=re.IGNORECASE)
         if match:
             latest_sefer_id = match.group(1)
             
-    if latest_sefer_id and "Aktif sefer_id=" not in text:
-        return text + f" [SİSTEM BİLGİSİ: Aktif sefer_id={latest_sefer_id}]"
+    if latest_sefer_id:
+        if "Aktif sefer_id=" not in text:
+            # We use a neutral tag but helpful hint
+            return text + f" [SİSTEM BİLGİSİ: Aktif sefer_id={latest_sefer_id}]"
     return text
 
 
@@ -156,24 +158,36 @@ async def chat_endpoint(request: ChatRequest):
         system_injection = ""
         direct_seat_response = _try_direct_seat_validation(request.text, request.history)
         if direct_seat_response:
-            system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_seat_response}]"
+            if lang == "en":
+                system_injection = f" [SYSTEM INFORMATION: Tool result: {direct_seat_response}]"
+            else:
+                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_seat_response}]"
 
         direct_phone_response = _try_direct_phone_validation(request.text, request.history)
         if direct_phone_response:
-            system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_phone_response}]"
+            if lang == "en":
+                system_injection = f" [SYSTEM INFORMATION: Tool result: {direct_phone_response}]"
+            else:
+                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_phone_response}]"
 
         direct_email_response = _try_direct_email_validation(request.text, request.history)
         if direct_email_response:
             latest_sefer_id = None
             for m in request.history:
-                match = re.search(r"Sefer_ID:\s*(\d+)", m.get("content", ""))
+                match = re.search(r"(?:Sefer|Trip)[_]?ID:\s*(\d+)", m.get("content", ""), flags=re.IGNORECASE)
                 if match:
                     latest_sefer_id = match.group(1)
                     
-            if latest_sefer_id:
-                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya tüm bilgilerin (Güzergah, vb.) net bir ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon aracı kullanma! Onay sonrasına hazırlık için sefer_id={latest_sefer_id} değerini kullanacağını unutma.]"
+            if lang == "en":
+                if latest_sefer_id:
+                    system_injection = f" [SYSTEM INFORMATION: Tool result: {direct_email_response}. Please provide a clear SUMMARY of all info (Route, etc.) to the user and ask 'Do you confirm?'. Do NOT use the reservation tool at this step! Use Trip ID={latest_sefer_id} for the final Step 9.]"
+                else:
+                    system_injection = f" [SYSTEM INFORMATION: Tool result: {direct_email_response}. Please provide a SUMMARY and ask for confirmation. Do NOT book yet!]"
             else:
-                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya bilgilerin ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon yapma!]"
+                if latest_sefer_id:
+                    system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya tüm bilgilerin (Güzergah, vb.) net bir ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon aracı kullanma! Onay sonrasına hazırlık için sefer_id={latest_sefer_id} değerini kullanacağını unutma.]"
+                else:
+                    system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya bilgilerin ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon yapma!]"
 
         # LLM'in bu sonucu görüp bir sonraki adımı otomatik sorması için metne ekle
         processed_text = request.text + system_injection
@@ -235,25 +249,36 @@ async def websocket_chat(websocket: WebSocket):
             system_injection = ""
             direct_seat_response = _try_direct_seat_validation(text, history)
             if direct_seat_response:
-                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_seat_response}]"
+                if lang == "en":
+                    system_injection = f" [SYSTEM INFORMATION: Tool result: {direct_seat_response}]"
+                else:
+                    system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_seat_response}]"
 
             direct_phone_response = _try_direct_phone_validation(text, history)
             if direct_phone_response:
-                system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_phone_response}]"
+                if lang == "en":
+                    system_injection = f" [SYSTEM INFORMATION: Tool result: {direct_phone_response}]"
+                else:
+                    system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_phone_response}]"
 
             direct_email_response = _try_direct_email_validation(text, history)
             if direct_email_response:
-                # Olası context kopmalarını (unutkanlığı) engellemek için sefer_id'yi bulup hatırlat
                 latest_sefer_id = None
                 for m in history:
-                    match = re.search(r"Sefer_ID:\s*(\d+)", m.get("content", ""))
+                    match = re.search(r"(?:Sefer|Trip)[_]?ID:\s*(\d+)", m.get("content", ""), flags=re.IGNORECASE)
                     if match:
                         latest_sefer_id = match.group(1)
                 
-                if latest_sefer_id:
-                    system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya tüm bilgilerin (Güzergah, vb.) net bir ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon aracı kullanma! Onay sonrasına hazırlık için sefer_id={latest_sefer_id} değerini kullanacağını unutma.]"
+                if lang == "en":
+                    if latest_sefer_id:
+                        system_injection = f" [SYSTEM INFORMATION: Tool result: {direct_email_response}. Please provide a clear SUMMARY of all info (Route, etc.) to the user and ask 'Do you confirm?'. Do NOT use the reservation tool at this step! Use Trip ID={latest_sefer_id} for the final Step 9.]"
+                    else:
+                        system_injection = f" [SYSTEM INFORMATION: Tool result: {direct_email_response}. Please provide a SUMMARY and ask for confirmation. Do NOT book yet!]"
                 else:
-                    system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya bilgilerin ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon yapma!]"
+                    if latest_sefer_id:
+                        system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya tüm bilgilerin (Güzergah, vb.) net bir ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon aracı kullanma! Onay sonrasına hazırlık için sefer_id={latest_sefer_id} değerini kullanacağını unutma.]"
+                    else:
+                        system_injection = f" [SİSTEM BİLGİSİ: Araç sonucu: {direct_email_response}. Lütfen şimdi kullanıcıya bilgilerin ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Asla bu adımda rezervasyon yapma!]"
 
             processed_text = text + system_injection
             processed_text = _append_sefer_id_context(processed_text, history)
