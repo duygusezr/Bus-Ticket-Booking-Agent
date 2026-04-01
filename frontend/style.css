@@ -350,3 +350,110 @@ canvas#canvas {
     height: 100% !important;
     display: block;
 }
+
+/* ============================================================
+   MOBİL UYUMLULUK (Responsive Design)
+   ============================================================ */
+@media screen and (max-width: 768px) {
+    #app {
+        padding: 0; /* Mobilde tam ekran */
+    }
+
+    .main-layout {
+        flex-direction: column-reverse; /* Avatarı üste, sohbeti alta al */
+        border-radius: 0; /* Köşe yuvarlamalarını iptal et */
+        box-shadow: none;
+    }
+
+    .avatar-panel {
+        flex: none;
+        height: 40vh; /* Avatar ekranın üst %40'ını kaplasın */
+        border-left: none;
+        border-bottom: 2px solid #eee;
+    }
+
+    .chat-panel {
+        flex: none;
+        height: 60vh; /* Sohbet ekranın alt %60'ını kaplasın */
+    }
+
+    /* Başlık ve Metin Boyutlarını Küçültme */
+    .avatar-header-text {
+        top: 20px;
+    }
+
+    .avatar-header-text h3 {
+        font-size: 24px;
+    }
+
+    .avatar-header-text h3 b {
+        font-size: 13px;
+        height: 20px;
+    }
+
+    .avatar-header-text p {
+        font-size: 12px;
+        padding: 4px 15px;
+        margin-top: 8px;
+    }
+
+    .menu-icon {
+        top: 15px;
+        right: 15px;
+        width: 35px;
+        height: 35px;
+        font-size: 16px;
+    }
+
+    /* Sohbet Alanı Boşlukları (Padding) Azaltma */
+    .chat-header {
+        padding: 10px 15px;
+    }
+
+    .chat-history-area {
+        padding: 15px;
+        gap: 15px;
+    }
+
+    .history-item {
+        max-width: 95%; /* Mesaj baloncuğu mobilde daha geniş olabilir */
+        font-size: 15px;
+    }
+
+    .history-item.user {
+        padding: 10px 15px;
+    }
+
+    .chat-input-area {
+        padding: 15px;
+    }
+
+    .input-container {
+        padding: 5px 10px 5px 15px;
+    }
+
+    #chat-input {
+        padding: 12px 0;
+        font-size: 14px;
+    }
+
+    .input-container button {
+        width: 36px;
+        height: 36px;
+        font-size: 15px;
+        margin-left: 6px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    /* Daha küçük ekranlar için ekstra ince ayar */
+    .avatar-panel {
+        height: 35vh;
+    }
+    .chat-panel {
+        height: 65vh;
+    }
+    .avatar-header-text h3 {
+        font-size: 22px;
+    }
+}
