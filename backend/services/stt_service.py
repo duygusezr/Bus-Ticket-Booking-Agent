@@ -425,27 +425,34 @@ def _detect_numeric_context(text: str) -> bool:
 async def _transcribe_gemini_fallback(audio_bytes: bytes, mime_type: str, lang: str) -> dict:
     """
     Gemini 2.5 Flash STT fallback when ElevenLabs fails.
+    Uses system_instruction to force purely transcript output.
     """
     try:
         print(f"DEBUG: Falling back to Gemini STT... (Mime: {mime_type}, Lang: {lang})")
         client = genai.Client(api_key=settings.GOOGLE_API_KEY)
         
-        # Determine language prompt
-        prompt = "Transcribe this audio to text. Only provide the transcript, no other text."
+        # Determine language specific instruction
         if lang == "tr":
-            prompt = "Bu sesi metne çevir. Sadece konuşulanları yaz, başka açıklama ekleme."
+            instruction = "Sen bir ASR (Sesden-Metne) uzmanısın. TEK görevin sağlanan ses dosyasını eksiksiz ve doğru bir şekilde yazıya dökmektir. Asla kendi yorumlarını ekleme, 'Metin:', 'Transkripsiyon:' gibi etiketler yazma. Sadece duyduğun kelimeleri döndür. Ses yoksa boşluk döndür."
+        else:
+            instruction = "You are a professional ASR (Speech-to-Text) specialist. Your SOLE task is to transcribe the provided audio accurately. Do not add any conversational text, explanations, or labels like 'Transcript:'. Only return the words spoken in the audio. If no speech is detected, return an empty string."
             
         response = await client.aio.models.generate_content(
             model=settings.GEMINI_CHAT_MODEL,
             contents=[
                 types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                prompt
-            ]
+            ],
+            config=types.GenerateContentConfig(
+                system_instruction=instruction,
+                temperature=0.0 # Stick to literal transcription
+            )
         )
         
         transcript = (response.text or "").strip()
-        # Clean up any "Transcript:" or "...") prefix Gemini might add
-        transcript = re.sub(r"^(Transcript|Transkripsiyon|Metin):\s*", "", transcript, flags=re.IGNORECASE)
+        
+        # Clean up any residual markdown or labels Gemini might still add
+        transcript = re.sub(r"^(Transcript|Transkripsiyon|Metin|Result|Sonuç):\s*", "", transcript, flags=re.IGNORECASE)
+        transcript = transcript.replace("`", "").strip()
         
         print(f"DEBUG: Gemini fallback transcript: '{transcript}'")
         return {
