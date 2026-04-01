@@ -309,13 +309,16 @@ def _convert_english_number_words(text: str) -> str:
     
     # Word -> Number map
     word_map = {
-        "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+        "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
         "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
         "eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14", "fifteen": "15",
-        "sixteen": "16", "seventeen": "17", "eighteen": "18", "nineteen": "19", "twenty": "20"
+        "sixteen": "16", "seventeen": "17", "eighteen": "18", "nineteen": "19", "twenty": "20",
+        "thirty": "30", "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70", "eighty": "80", "ninety": "90",
+        "hundred": "00", "thousand": "000", "million": "000000"
     }
 
-    # Sort keys by length (longest first) to prevent partial matching (though not an issue here)
+    # Complex English number normalization is hard with just regex, 
+    # but we can handle the most common "digit-by-digit" or simple compounds.
     for k, v in sorted(word_map.items(), key=lambda x: len(x[0]), reverse=True):
         t = re.sub(rf"\b{re.escape(k)}\b", v, t)
 
@@ -412,24 +415,32 @@ def _detect_numeric_context(text: str) -> bool:
     t_normalized = t.replace("ı", "i").replace("ş", "s").replace("ğ", "g")
     t_normalized = t_normalized.replace("ü", "u").replace("ö", "o").replace("ç", "c")
     
-    # Türkçe sayı kelimeleri (STT yanlış duyma varyantları dahil)
+    # Sayı kelimeleri (TR + EN)
     number_words = {
+        # TR
         "sifir", "bir", "iki", "uc", "dort", "bes", "alti", "yedi", "sekiz", "dokuz",
         "on", "yirmi", "otuz", "kirk", "elli", "altmis", "atmis", "almis", "yetmis", "yemis", "seksen", "seksan", "doksan",
-        "onbir", "oniki", "onuc", "ondort", "onbes", "onalti", "onyedi", "onsekiz", "ondokuz"
+        "onbir", "oniki", "onuc", "ondort", "onbes", "onalti", "onyedi", "onsekiz", "ondokuz",
+        # EN
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+        "eleven", "twelve", "hundred", "thousand", "million", "billion"
     }
     
     tokens = re.sub(r"[^a-z0-9\s]", " ", t_normalized).split()
     if not tokens:
         return False
         
-    # Tarih, gün, ay, yıl belirten kelimeler içeriyorsa sayısal ağırlıklı BAĞLAM kabul etme
+    # Tarih, gün, ay, yıl belirten kelimeler (TR + EN)
     exclude_words = {
         "ocak", "subat", "mart", "nisan", "mayis", "haziran", 
         "temmuz", "agustos", "eylul", "ekim", "kasim", "aralik",
         "bugun", "yarin", "haftaya", "gun", "ay", "yil",
         "pazartesi", "sali", "carsamba", "persembe", "cuma", "cumartesi", "pazar",
-        "bin", "isim", "sehir", "bursa", "istanbul", "ankara", "gidis", "donus"
+        "bin", "isim", "sehir", "bursa", "istanbul", "ankara", "gidis", "donus",
+        # EN
+        "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december",
+        "today", "tomorrow", "next", "week", "day", "month", "year",
+        "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"
     }
     
     for tok in tokens:

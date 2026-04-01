@@ -104,13 +104,23 @@ def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
 
     def _extract_numeric_stream(text: str) -> str:
         # Yazıyla ve rakamla gelen sayı ifadelerini sırayla rakama çevirir.
+        # TR + EN Maps
         unit_map = {
             "sifir": 0, "bir": 1, "iki": 2, "uc": 3, "dort": 4,
-            "bes": 5, "alti": 6, "yedi": 7, "sekiz": 8, "dokuz": 9
+            "bes": 5, "alti": 6, "yedi": 7, "sekiz": 8, "dokuz": 9,
+            "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+            "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9
         }
-        ten_map = {"on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, "altmis": 60, "atmis": 60, "almis": 60, "yetmis": 70, "yemis": 70, "seksen": 80, "seksan": 80, "doksan": 90}
+        ten_map = {
+            "on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, 
+            "altmis": 60, "atmis": 60, "almis": 60, "yetmis": 70, "yemis": 70, 
+            "seksen": 80, "seksan": 80, "doksan": 90,
+            "ten": 10, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
+            "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90
+        }
         compound_map = {
-            "onbir": 11, "oniki": 12, "onuc": 13, "ondort": 14, "onbes": 15, "onalti": 16, "onyedi": 17, "onsekiz": 18, "ondokuz": 19
+            "onbir": 11, "oniki": 12, "onuc": 13, "ondort": 14, "onbes": 15, "onalti": 16, "onyedi": 17, "onsekiz": 18, "ondokuz": 19,
+            "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19
         }
 
         tokens = _normalize_tokens(text)
@@ -415,8 +425,15 @@ def _normalize_phone_input(text: str) -> str:
     t = re.sub(r"[^0-9a-zA-Z\s]", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
 
-    unit_map = {"sifir": 0, "bir": 1, "iki": 2, "uc": 3, "dort": 4, "bes": 5, "alti": 6, "yedi": 7, "sekiz": 8, "dokuz": 9}
-    ten_map = {"on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, "altmis": 60, "atmis": 60, "almis": 60, "yetmis": 70, "yemis": 70, "seksen": 80, "seksan": 80, "doksan": 90}
+    # TR + EN Maps
+    unit_map = {
+        "sifir": 0, "bir": 1, "iki": 2, "uc": 3, "dort": 4, "bes": 5, "alti": 6, "yedi": 7, "sekiz": 8, "dokuz": 9,
+        "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9
+    }
+    ten_map = {
+        "on": 10, "yirmi": 20, "otuz": 30, "kirk": 40, "elli": 50, "altmis": 60, "atmis": 60, "almis": 60, "yetmis": 70, "yemis": 70, "seksen": 80, "seksan": 80, "doksan": 90,
+        "ten": 10, "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90
+    }
 
     parts = []
     tokens = t.split(" ") if t else []
