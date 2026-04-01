@@ -58,7 +58,8 @@ async def _summarize(session: dict, session_id: str):
             f"{prev}New messages:\n{buffer_text}\n\n"
             f"Summarize the conversation above in 3-5 sentences in {lang_instr}. "
             "IMPORTANT: Preserve exact technical details: cities, dates, Sefer IDs, Seat numbers. "
-            "NEVER use placeholders like '12345' or generic cities."
+            "NEVER use placeholder names or example cities (like Istanbul-Ankara) if they were not in the actual conversation. "
+            "Data integrity is CRITICAL. If a specific Sefer ID was mentioned, it MUST remain unchanged."
         )
         
         # Asenkron çağrı (aio)

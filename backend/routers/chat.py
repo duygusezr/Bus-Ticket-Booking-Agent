@@ -30,8 +30,9 @@ def _extract_last_assistant_text(history: List[Dict[str, str]]) -> str:
 
 def _inject_ground_truth_context(text: str, history: List[Dict[str, str]]) -> str:
     """
-    Scans entire conversation history for technical travel data (Route, Date, Sefer ID, Seat) 
-    and injects it as a hidden [GROUND TRUTH] block to ensure the LLM summary is accurate.
+    Kritik rezervasyon verilerini (ID, Güzergah, Tarih, Koltuk) geçmişten çeker
+    ve modele 'MUTLAK DOĞRU' (GROUND TRUTH) olarak her mesajda enjekte eder.
+    Halüsinasyonu (12345ID, Ters güzergah vb.) önler.
     """
     g_id = None
     g_route = None
@@ -40,33 +41,52 @@ def _inject_ground_truth_context(text: str, history: List[Dict[str, str]]) -> st
 
     for m in history:
         content = str(m.get("content", ""))
-        # 1. Sefer ID
-        id_match = re.search(r"(?:Sefer|Trip)\s*(?:No|ID)[:=\s]*(\d+)", content, flags=re.IGNORECASE)
+        
+        # 1. Sefer ID (TR/EN Fark etmeksizin yakala)
+        id_match = re.search(r"(?:Sefer|Trip|Sefer no|Trip id|ID)[:=\s]*(\d+)", content, flags=re.IGNORECASE)
         if id_match: g_id = id_match.group(1)
 
         # 2. Route (Nereden Nereye)
-        route_match = re.search(r"(?:Güzergah|Route|Trip)[:\s]*([a-zA-ZçğıöşüÇĞİÖŞÜ\s]+->[a-zA-ZçğıöşüÇĞİÖŞÜ\s]+|[a-zA-ZçğıöşüÇĞİÖŞÜ\s]+to[a-zA-ZçğıöşüÇĞİÖŞÜ\s]+)", content, flags=re.IGNORECASE)
-        if route_match: g_route = route_match.group(1).strip()
+        # "Ankara to Istanbul", "Ankara -> Istanbul", "from Ankara to Istanbul"
+        route_match = re.search(r"(?:from|kalkış|nereden)?\s*([a-zğüşöçıç\s]{3,20})\s*(?:-|->|to|varış|nereye)\s*([a-zğüşöçıç\s]{3,20})", content, flags=re.IGNORECASE)
+        if route_match:
+            # Sadece şehir isimlerine odaklan
+            c1 = route_match.group(1).strip().capitalize()
+            c2 = route_match.group(2).strip().capitalize()
+            # "I want to go from" gibi kelimeleri temizle
+            c1 = re.sub(r"^(?:I want to go from|I want to travel from|go from|travel from)\s+", "", c1, flags=re.IGNORECASE)
+            if c1 and c2:
+                g_route = f"{c1} to {c2}"
 
-        # 3. Date
-        date_match = re.search(r"(?:Tarih|Date)[:\s]*(\d{1,2}[\.\-/]\d{1,2}[\.\-/]\d{4}|\d{4}-\d{2}-\d{2})", content, flags=re.IGNORECASE)
-        if date_match: g_date = date_match.group(1)
+        # 3. Date (ISO, Slash, or Word-based like April 12)
+        date_match = re.search(r"(\d{4}-\d{2}-\d{2}|\d{1,2}[./-]\d{1,2}[./-]\d{2,4})", content)
+        if date_match: 
+            g_date = date_match.group(1)
+        else:
+            # Try to catch "April 12" or "12th April"
+            month_match = re.search(r"(\d{1,2}(?:st|nd|rd|th)?\s*(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık|January|February|March|April|May|June|July|August|September|October|November|December))\b", content, flags=re.IGNORECASE)
+            if month_match: g_date = month_match.group(1)
+            else:
+                month_match_rev = re.search(r"\b(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık|January|February|March|April|May|June|July|August|September|October|November|December)\s*(\d{1,2}(?:st|nd|rd|th)?)\b", content, flags=re.IGNORECASE)
+                if month_match_rev: g_date = month_match_rev.group(0)
 
         # 4. Seat
         seat_match = re.search(r"(?:Koltuk|Seat)[:\s]*(\d+)", content, flags=re.IGNORECASE)
         if seat_match: g_seat = seat_match.group(1)
 
-    # 5. Build Ground Truth Block
+    # Verileri birleştir
     truth = []
-    if g_id: truth.append(f"Sefer ID={g_id}")
-    if g_route: truth.append(f"Route={g_route}")
-    if g_date: truth.append(f"Date={g_date}")
-    if g_seat: truth.append(f"Seat={g_seat}")
+    if g_id: truth.append(f"STRICT_ID={g_id}")
+    if g_route: truth.append(f"STRICT_ROUTE={g_route}")
+    if g_date: truth.append(f"STRICT_DATE={g_date}")
+    if g_seat: truth.append(f"STRICT_SEAT={g_seat}")
 
     if truth:
-        truth_str = ", ".join(truth)
-        if f"[GROUND TRUTH: {truth_str}]" not in text:
-            return text + f" [GROUND TRUTH: {truth_str}]"
+        truth_str = " | ".join(truth)
+        # Halüsinasyon uyarısıyla birlikte enjekte et
+        injection = f" [ABSOLUTE SYSTEM TRUTH (NEVER HALLUCINATE): {truth_str}]"
+        if injection not in text:
+            return text + injection
     return text
 
 
