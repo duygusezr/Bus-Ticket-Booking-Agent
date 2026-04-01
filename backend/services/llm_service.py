@@ -58,7 +58,7 @@ async def generate_chat_response(text: str, history: List[Dict[str, str]], lang:
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
                 tools=[get_bus_trips, make_reservation, validate_seat_selection, validate_tc_number, validate_phone_number, validate_email_address],
-                temperature=0.3
+                temperature=0.0
             ),
             history=gemini_history
         )

@@ -38,9 +38,10 @@ def _summarize(session: dict, session_id: str):
             f"Kullanıcı: {m['user']}\nELA: {m['ai']}" for m in session["buffer"]
         )
         prev = f"Önceki özet:\n{session['summary']}\n\n" if session["summary"] else ""
+        lang_instr = "English" if "i want to go" in buffer_text.lower() or "hello" in buffer_text.lower() else "Turkish"
         prompt = (
-            f"{prev}Yeni konuşmalar:\n{buffer_text}\n\n"
-            "Yukarıdaki konuşmayı 3-5 cümleyle Türkçe özetle. Sadece özeti yaz."
+            f"{prev}New messages:\n{buffer_text}\n\n"
+            f"Summarize the conversation above in 3-5 sentences in {lang_instr}. Only write the summary."
         )
         response = client.models.generate_content(
             model=settings.GEMINI_CHAT_MODEL,
