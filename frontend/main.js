@@ -105,8 +105,7 @@ function animate() {
         updateBreathing(elapsed);
         updateIdleHeadMovement(elapsed, deltaTime);
         updateLipSync();
-        updateExpressions(deltaTime);
-        updateHeadBehavior(elapsed, deltaTime);
+        updateActiveHeadMovement(elapsed, deltaTime);
         updateEyeMovement(elapsed, deltaTime);
     }
 
@@ -284,63 +283,12 @@ function updateLipSync() {
 }
 
 // ============================================================
-// DUYGU SİSTEMİ
+// KONUŞMA VE DİNLEME KAFA HAREKETİ
 // ============================================================
-const expressionTargets = {
-    happy: 0, angry: 0, sad: 0, relaxed: 0, surprised: 0,
-    neutral: 1, think: 0, awkward: 0, curious: 0, question: 0
-};
-const currentExpressions = { ...expressionTargets };
+const headActiveOffset = { x: 0, y: 0, z: 0 };
 
-function updateExpressions(delta) {
-    if (!currentVrm?.expressionManager) return;
-
-    const lerpSpeed = 2.0;
-
-    for (const key in expressionTargets) {
-        currentExpressions[key] += (expressionTargets[key] - currentExpressions[key]) * Math.min(lerpSpeed * delta, 1.0);
-        const val = currentExpressions[key];
-
-        if (key === 'happy') {
-            currentVrm.expressionManager.setValue('happy', val * 0.5);
-            currentVrm.expressionManager.setValue('joy', val * 0.5);
-        } else if (key === 'angry') {
-            currentVrm.expressionManager.setValue('angry', val * 0.4);
-        } else if (key === 'sad') {
-            currentVrm.expressionManager.setValue('sad', val * 0.45);
-            currentVrm.expressionManager.setValue('sorrow', val * 0.45);
-        } else if (key === 'surprised') {
-            currentVrm.expressionManager.setValue('surprised', val * 0.45);
-        } else if (key === 'relaxed') {
-            currentVrm.expressionManager.setValue('relaxed', val * 0.4);
-        } else if (key === 'think') {
-            currentVrm.expressionManager.setValue('relaxed', val * 0.3);
-        } else if (key === 'awkward') {
-            currentVrm.expressionManager.setValue('sad', val * 0.2);
-        } else if (key === 'curious' || key === 'question') {
-            currentVrm.expressionManager.setValue('surprised', val * 0.2);
-        }
-    }
-}
-
-// ============================================================
-// DUYGUYA GÖRE KAFA HAREKETİ
-// ============================================================
-const headEmotionOffset = { x: 0, y: 0, z: 0 };
-
-function updateHeadBehavior(elapsed, delta) {
+function updateActiveHeadMovement(elapsed, delta) {
     if (!currentVrm || !cachedBones.head) return;
-
-    const hv = currentExpressions.happy;
-    const sv = currentExpressions.sad;
-    const av = currentExpressions.angry;
-    const srv = currentExpressions.surprised;
-    const tv = currentExpressions.think;
-    const cv = currentExpressions.curious || currentExpressions.question;
-
-    const targetZ = hv * 0.06 - sv * 0.05 + tv * 0.08;
-    const targetX = av * 0.08 - srv * 0.05 - cv * 0.04;
-    const targetY = tv * 0.15;
 
     const speakX = isSpeaking ? Math.sin(elapsed * 2.2) * 0.012 : 0;
     const speakZ = isSpeaking ? Math.cos(elapsed * 1.8) * 0.006 : 0;
@@ -348,13 +296,13 @@ function updateHeadBehavior(elapsed, delta) {
     const listenZ = isListening ? Math.cos(elapsed * 1.1) * 0.008 : 0;
 
     const hs = Math.min(3.0 * delta, 1.0);
-    headEmotionOffset.x += (targetX + speakX + listenX - headEmotionOffset.x) * hs;
-    headEmotionOffset.y += (targetY - headEmotionOffset.y) * hs;
-    headEmotionOffset.z += (targetZ + speakZ + listenZ - headEmotionOffset.z) * hs;
+    headActiveOffset.x += (speakX + listenX - headActiveOffset.x) * hs;
+    headActiveOffset.y += (0 - headActiveOffset.y) * hs;
+    headActiveOffset.z += (speakZ + listenZ - headActiveOffset.z) * hs;
 
-    cachedBones.head.rotation.x = idleHead.x + headEmotionOffset.x;
-    cachedBones.head.rotation.y = idleHead.y + headEmotionOffset.y;
-    cachedBones.head.rotation.z = idleHead.z + headEmotionOffset.z;
+    cachedBones.head.rotation.x = idleHead.x + headActiveOffset.x;
+    cachedBones.head.rotation.y = idleHead.y + headActiveOffset.y;
+    cachedBones.head.rotation.z = idleHead.z + headActiveOffset.z;
 }
 
 // ============================================================
@@ -389,24 +337,11 @@ function updateEyeMovement(elapsed, delta) {
 }
 
 // ============================================================
-// DUYGU AYARLAMA
-// ============================================================
-function setEmotion(emotion) {
-    for (const key in expressionTargets) expressionTargets[key] = 0;
-    expressionTargets.neutral = 1.0;
-}
-
-// ============================================================
 // ACT TOKEN TEMİZLEYİCİ
 // ============================================================
 function processActTokens(text) {
     if (!text) return "";
-    setEmotion('neutral');
     return text.replace(/<\|ACT:.*?\|>/gs, '').replace(/<\|DELAY:.*?\|>/g, '').trim();
-}
-
-function handleEmotionsLocal(text) {
-    setEmotion('neutral');
 }
 
 // ============================================================
@@ -497,7 +432,7 @@ function initWebSocket() {
             await playBase64Audio(data.content);
         }
         else if (data.type === 'emotion') {
-            setEmotion('neutral');
+            // Emotion logic removed
         }
         else if (data.type === 'done') {
             isSending = false;
@@ -512,7 +447,6 @@ function initWebSocket() {
             isSending = false;
             if (subtitle) subtitle.textContent = "Hata: " + data.content;
             addToHistoryPanel('ai', "Hata: " + data.content);
-            setEmotion('neutral');
         }
     };
 
@@ -532,7 +466,7 @@ function initWebSocket() {
 initWebSocket();
 
 // Sidebar Toggle (Sol)
-toggleSidebarBtn.onclick = () => { historySidebar.classList.add('open'); emotionSidebar.classList.remove('open'); };
+toggleSidebarBtn.onclick = () => { historySidebar.classList.add('open'); };
 closeSidebarBtn.onclick = () => { historySidebar.classList.remove('open'); };
 
 
@@ -649,7 +583,6 @@ micBtn.addEventListener('mousedown', async () => {
         micBtn.classList.add('recording');
         subtitle.textContent = "Dinliyorum...";
         isListening = true;
-        setEmotion('neutral');
     } catch (err) {
         subtitle.textContent = "Lütfen mikrofon izni verin.";
     }
@@ -681,13 +614,11 @@ async function sendMessage() {
     isSending = true;
     stopAudio();
     await initWebAudio();
-    handleEmotionsLocal(text);
     chatHistory.push({ role: 'user', content: text });
     addToHistoryPanel('user', text);
     chatInput.value = '';
 
     subtitle.textContent = translations[currentLang].thinking;
-    setEmotion('neutral');
     currentFullResponse = "";
 
     const payload = JSON.stringify({
@@ -735,7 +666,6 @@ async function playBase64Audio(base64Str) {
 
         source.onended = () => {
             if (activeSource === source) { activeSource = null; isSpeaking = false; }
-            setTimeout(() => setEmotion('neutral'), 2000);
         };
 
         source.connect(analyser);
