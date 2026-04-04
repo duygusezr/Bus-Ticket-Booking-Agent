@@ -1,15 +1,27 @@
+import asyncio
 import base64
-import os
 import re
 
-from config import settings
 import edge_tts
-import asyncio
-import sys
+from config import settings
 
-TR_UNITS = ["sıfır", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"]
-TR_TENS = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"]
+_TR_UNITS = ["sıfır", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"]
+_TR_TENS  = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"]
 
+_ACT_RE   = re.compile(r'<\|ACT:.*?\|>', re.DOTALL)
+_DELAY_RE = re.compile(r'<\|DELAY:.*?\|>')
+_MONEY_RE = re.compile(r'(\d[\d.\s]*(?:,\d{1,2})?)\s*TL\b', re.IGNORECASE)
+_INT_RE   = re.compile(r'\b\d+\b')
+
+_VOICES = {
+    "tr": "tr-TR-EmelNeural",
+    "en": "en-US-AriaNeural",
+}
+
+
+# ─────────────────────────────────────────────
+# Number → Turkish words
+# ─────────────────────────────────────────────
 
 def _number_to_turkish(n: int) -> str:
     if n == 0:
@@ -17,125 +29,104 @@ def _number_to_turkish(n: int) -> str:
     if n < 0:
         return "eksi " + _number_to_turkish(-n)
 
-    def under_thousand(x: int) -> str:
+    def _under_thousand(x: int) -> str:
         parts = []
-        hundreds = x // 100
-        rem = x % 100
-        tens = rem // 10
-        units = rem % 10
-        if hundreds:
-            if hundreds == 1:
-                parts.append("yüz")
-            else:
-                parts.append(f"{TR_UNITS[hundreds]} yüz")
-        if tens:
-            parts.append(TR_TENS[tens])
-        if units:
-            parts.append(TR_UNITS[units])
+        h = x // 100
+        r = x % 100
+        if h:
+            parts.append("yüz" if h == 1 else f"{_TR_UNITS[h]} yüz")
+        if r // 10:
+            parts.append(_TR_TENS[r // 10])
+        if r % 10:
+            parts.append(_TR_UNITS[r % 10])
         return " ".join(parts)
 
     parts = []
-    millions = n // 1_000_000
-    n %= 1_000_000
-    thousands = n // 1_000
-    n %= 1_000
+    M = n // 1_000_000; n %= 1_000_000
+    K = n // 1_000;     n %= 1_000
 
-    if millions:
-        parts.append(f"{under_thousand(millions)} milyon")
-    if thousands:
-        parts.append("bin" if thousands == 1 else f"{under_thousand(thousands)} bin")
-    if n:
-        parts.append(under_thousand(n))
+    if M: parts.append(f"{_under_thousand(M)} milyon")
+    if K: parts.append("bin" if K == 1 else f"{_under_thousand(K)} bin")
+    if n: parts.append(_under_thousand(n))
     return " ".join(parts).strip()
 
 
-def _prepare_turkish_tts_text(text: str) -> str:
-    """
-    Improve Turkish number pronunciation:
-    - 1.191,38 TL -> bin yuz doksan bir lira otuz sekiz kurus
-    - long IDs (8+ digits) -> digit-by-digit readout
-    - other integers -> cardinal word
-    """
-    result = text
+def _prepare_tts_text(text: str) -> str:
+    """Convert numbers/currency to Turkish words for better TTS pronunciation."""
+    def _money(m: re.Match) -> str:
+        raw = m.group(1).replace(".", "").replace(" ", "")
+        whole, *frac_parts = raw.split(",")
+        frac = frac_parts[0] if frac_parts else "0"
+        lira   = int(whole) if whole.isdigit() else 0
+        kurus  = int(frac[:2].ljust(2, "0")) if frac.isdigit() else 0
+        return (f"{_number_to_turkish(lira)} lira {_number_to_turkish(kurus)} kurus"
+                if kurus else f"{_number_to_turkish(lira)} lira")
 
-    def money_repl(match: re.Match) -> str:
-        raw = match.group(1).replace(".", "").replace(" ", "")
-        whole, frac = (raw.split(",") + ["0"])[:2]
-        lira = int(whole) if whole.isdigit() else 0
-        kurus = int(frac[:2].ljust(2, "0")) if frac.isdigit() else 0
-        if kurus > 0:
-            return f"{_number_to_turkish(lira)} lira {_number_to_turkish(kurus)} kurus"
-        return f"{_number_to_turkish(lira)} lira"
-
-    # Currency first.
-    result = re.sub(r"(\d[\d\.\s]*(?:,\d{1,2})?)\s*TL\b", money_repl, result, flags=re.IGNORECASE)
-
-    def num_repl(match: re.Match) -> str:
-        s = match.group(0)
+    def _num(m: re.Match) -> str:
+        s = m.group(0)
+        # Long IDs (8+ digits): read digit by digit
         if len(s) >= 8:
-            return " ".join(TR_UNITS[int(ch)] for ch in s)
+            return " ".join(_TR_UNITS[int(c)] for c in s)
         return _number_to_turkish(int(s))
 
-    # Then standalone integer numbers.
-    result = re.sub(r"\b\d+\b", num_repl, result)
+    result = _MONEY_RE.sub(_money, text)
+    result = _INT_RE.sub(_num, result)
     return result
 
 
+# ─────────────────────────────────────────────
+# Edge-TTS
+# ─────────────────────────────────────────────
 
+async def _edge_tts(text: str, lang: str) -> str:
+    """Synthesize via Edge-TTS with one retry on transient errors."""
+    voice = _VOICES.get(lang, _VOICES["tr"])
+    last_err: Exception | None = None
 
-async def generate_tts_edge(text: str, lang: str) -> str:
-    """
-    Microsoft Edge-TTS fallback with retry logic for transient errors (e.g., 503).
-    """
-    voice = "tr-TR-EmelNeural" if lang == "tr" else "en-US-AriaNeural"
-    
-    last_error = None
     for attempt in range(2):
         try:
             communicate = edge_tts.Communicate(text, voice)
-            audio_data = bytearray()
+            audio = bytearray()
             async for chunk in communicate.stream():
-                if chunk.get("type") == "audio":
-                    data = chunk.get("data")
-                    if data:
-                        audio_data.extend(data)
-            
-            if not audio_data:
-                raise Exception("Edge-TTS empty audio data.")
-            
-            return base64.b64encode(audio_data).decode("utf-8")
-            
+                if chunk.get("type") == "audio" and chunk.get("data"):
+                    audio.extend(chunk["data"])
+            if not audio:
+                raise RuntimeError("Edge-TTS returned empty audio.")
+            return base64.b64encode(audio).decode()
         except Exception as e:
-            last_error = e
-            error_msg = str(e).lower()
-            if attempt == 0 and ("503" in error_msg or "invalid response status" in error_msg or "connection" in error_msg):
-                print(f"[TTS-EDGE] Transient error on attempt 1 ({error_msg}). Retrying in 1s...")
+            last_err = e
+            err_lower = str(e).lower()
+            if attempt == 0 and any(k in err_lower for k in ("503", "invalid response", "connection")):
                 await asyncio.sleep(1)
                 continue
             break
-            
-    print(f"[TTS-EDGE] Final failure: {str(last_error)}")
-    raise last_error
+
+    raise last_err  # type: ignore[misc]
+
+
+# ─────────────────────────────────────────────
+# Public API
+# ─────────────────────────────────────────────
 
 async def generate_tts(text: str, lang: str | None = None, voice: str = "default") -> str:
     """
-    Gelen metni sese dönüştürür.
-    Önce ElevenLabs dener, hata alırsa edge-tts'e düşer.
+    Convert text to speech. Returns base64-encoded MP3 string.
+    ACT/DELAY tokens are stripped before synthesis.
+    Falls back to empty string on failure (non-fatal for callers).
     """
     if not text or not text.strip():
         return ""
 
     lang = lang or settings.DEFAULT_LANG
-    # ACT ve DELAY tokenlarını temizle (seslendirme için)
-    clean_text = re.sub(r'<\|ACT:.*?\|>', '', text)
-    clean_text = re.sub(r'<\|DELAY:.*?\|>', '', clean_text)
-    clean_text = clean_text.strip()
+
+    clean = _ACT_RE.sub("", text)
+    clean = _DELAY_RE.sub("", clean).strip()
+
     if lang == "tr":
-        clean_text = _prepare_turkish_tts_text(clean_text)
-    
-    # Try Edge-TTS (Primary)
+        clean = _prepare_tts_text(clean)
+
     try:
-        return await generate_tts_edge(clean_text, lang)
+        return await _edge_tts(clean, lang)
     except Exception as e:
-        print(f"[TTS] Edge-TTS also failed ({str(e)}). Falling back to text-only.")
+        print(f"[TTS] Edge-TTS failed: {e}. Returning empty.")
         return ""

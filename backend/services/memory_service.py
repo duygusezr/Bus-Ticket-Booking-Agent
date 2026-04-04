@@ -1,12 +1,12 @@
 import asyncio
 import time
 import google.genai as genai
-from google.genai import types
 from config import settings
 from typing import Dict, List
 
 _sessions: Dict[str, dict] = {}
-SUMMARIZE_EVERY = 5  # Re-summarize more frequently in background
+_SUMMARIZE_EVERY = 5
+_MIN_INPUT_LEN = 5
 
 
 def _get_session(session_id: str) -> dict:
@@ -19,64 +19,50 @@ def get_current_summary(session_id: str = "default") -> str:
     return _get_session(session_id)["summary"]
 
 
-async def update_memory(user_input: str, ai_response: str, session_id: str = "default"):
-    """
-    Hafızayı günceller. Karakter sayısı çok az ise özetleme tetiklemez.
-    """
+async def update_memory(user_input: str, ai_response: str, session_id: str = "default") -> None:
     session = _get_session(session_id)
     session["buffer"].append({"user": user_input, "ai": ai_response})
     session["total"] += 1
-    
-    # 5 karakterden kısa girişi skip et (örn: "evet", "12")
-    if len(user_input.strip()) < 5:
+
+    # Skip very short inputs (e.g. "evet", "12") — not worth summarizing
+    if len(user_input.strip()) < _MIN_INPUT_LEN:
         return
 
-    if len(session["buffer"]) >= SUMMARIZE_EVERY:
-        # Arka planda çalıştır (Non-blocking)
+    if len(session["buffer"]) >= _SUMMARIZE_EVERY:
         asyncio.create_task(_summarize(session, session_id))
 
 
-async def _summarize(session: dict, session_id: str):
-    """
-    Gemini ile arka planda (asenkron) özet üretir.
-    """
-    t_mem_start = time.perf_counter()
+async def _summarize(session: dict, session_id: str) -> None:
+    t0 = time.perf_counter()
+    # Snapshot buffer before async gap so we don't race with concurrent appends
+    buffer_snapshot: List[dict] = session["buffer"][:]
+    session["buffer"] = []
+
     try:
-        api_key = settings.GOOGLE_API_KEY
-        client = genai.Client(api_key=api_key)
-        
+        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
         buffer_text = "\n".join(
-            f"Kullanıcı: {m['user']}\nELA: {m['ai']}" for m in session["buffer"]
+            f"Kullanıcı: {m['user']}\nELA: {m['ai']}" for m in buffer_snapshot
         )
         prev = f"Önceki özet:\n{session['summary']}\n\n" if session["summary"] else ""
-        
-        # Dil tespiti ve yönerge
-        is_en = any(word in buffer_text.lower() for word in ["hello", "i want to", "ticket", "route", "trip"])
-        lang_instr = "English" if is_en else "Turkish"
-        
+        is_en = any(w in buffer_text.lower() for w in ("hello", "i want to", "ticket", "route", "trip"))
+        lang = "English" if is_en else "Turkish"
+
         prompt = (
             f"{prev}New messages:\n{buffer_text}\n\n"
-            f"Summarize the conversation above in 3-5 sentences in {lang_instr}. "
-            "IMPORTANT: Preserve exact technical details: cities, dates, Sefer IDs, Seat numbers. "
-            "NEVER use placeholder names or example cities (like Istanbul-Ankara) if they were not in the actual conversation. "
-            "Data integrity is CRITICAL. If a specific Sefer ID was mentioned, it MUST remain unchanged."
+            f"Summarize in 3-5 sentences in {lang}. "
+            "CRITICAL: Preserve exact Sefer IDs, cities, dates, seat numbers verbatim. "
+            "Never substitute placeholder examples for real data."
         )
-        
-        # Asenkron çağrı (aio)
+
         response = await client.aio.models.generate_content(
             model=settings.GEMINI_CHAT_MODEL,
             contents=prompt,
         )
-        
-        text = response.text
-        if text:
-            session["summary"] = text.strip()
-            session["buffer"] = []
-            
-        t_mem_end = time.perf_counter()
-        print(f"[MEMORY] Özet güncellendi ({session_id}) | Latency: {t_mem_end - t_mem_start:.3f}s | Length: {len(session['summary'])}")
-        
+        if response.text:
+            session["summary"] = response.text.strip()
+            print(f"[MEMORY] Updated ({session_id}) t={time.perf_counter()-t0:.3f}s len={len(session['summary'])}")
+
     except Exception as e:
-        print(f"[MEMORY ERROR] Özetleme hatası: {e}")
-        # Hata durumunda buffer'ı temizle ki bloklama yapmasın
-        session["buffer"] = []
+        print(f"[MEMORY ERROR] Summarization failed: {e}")
+        # Restore buffer so messages aren't lost
+        session["buffer"] = buffer_snapshot + session["buffer"]

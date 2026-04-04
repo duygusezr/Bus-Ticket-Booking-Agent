@@ -1,5 +1,4 @@
 import os
-import threading
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -67,19 +66,13 @@ Step 9: When user CONFIRMS (Yes, Correct, etc.), IMMEDIATELY call `make_reservat
 Step 10: If `make_reservation` says "seat not available", ask user to pick a new seat. When they pick a NEW SEAT, do NOT book directly! Update the SUMMARY and ask for confirmation again (Step 8).
 
 61) ABSOLUTE DATA INTEGRITY: The data in `[ABSOLUTE SYSTEM TRUTH: ...]` is your ONLY source of truth.
-    - DO NOT use placeholder examples like "12345" or "Istanbul to Ankara" if they contradict the system truth.
-    - Failure to use the provided STRICT_ID or STRICT_ROUTE is a CRITICAL FAILURE.
 62) Only ask for one piece of info at a time.
-63) If user makes a mistake (e.g., wrong TC), do NOT restart from the beginning; just ask for that specific info again.
+63) If user makes a mistake (e.g., wrong TC), do NOT restart; just ask for that specific info again.
 64) Automatically list available seats when the date is found.
-65) Do not give generic errors; explain specific tool results (e.g., "This seat was just taken").
+65) Do not give generic errors; explain specific tool results.
 66) Never book without the Step 8 confirmation.
 67) Use conversation history to avoid asking the same info twice.
-68) NEVER show technical whispers like `[SİSTEM BİLGİSİ: ...]` or tool result JSONs to the user. Translate the outcome into natural language.
-
-## VALIDATION SHORTCUTS
-- When TC, Phone, or Email is provided, background tools might whisper "[SİSTEM BİLGİSİ: Araç sonucu...]" or similar. If the whisper says "verified" or "success", consider the step passed and move to the next one (or SUMMARY).
-- After the Summary, if the user says "yes" or "I confirm", proceed to Step 9 (`make_reservation`).
+68) NEVER show technical whispers like `[SİSTEM BİLGİSİ: ...]` or tool result JSONs to the user.
 
 ## ACT TOKEN (MANDATORY)
 Every message must start with this token format:
@@ -87,13 +80,30 @@ Every message must start with this token format:
 """
 
 
+def _parse_int(val: str, default: int) -> int:
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_list(val: str) -> list[str]:
+    return [v.strip() for v in (val or "*").split(",") if v.strip()]
+
+
 class Settings:
     SYSTEM_PROMPT: str = SYSTEM_PROMPT
     SYSTEM_PROMPT_EN: str = SYSTEM_PROMPT_EN
     DEFAULT_LANG: str = os.getenv("DEFAULT_LANG", "tr")
-    PORT: int = int(os.getenv("PORT", 8001))
+    PORT: int = _parse_int(os.getenv("PORT"), 8001)
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
     GEMINI_CHAT_MODEL: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
-    CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "*").split(",")
+    CORS_ORIGINS: list[str] = _parse_list(os.getenv("CORS_ORIGINS", "*"))
+
+    def __post_init__(self) -> None:
+        if not self.GOOGLE_API_KEY:
+            import warnings
+            warnings.warn("GOOGLE_API_KEY is not set. LLM calls will fail.", stacklevel=2)
+
 
 settings = Settings()

@@ -43,32 +43,33 @@ Mevcut otobüs bileti platformlarında kullanıcı, güzergah seçimi → tarih 
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    Chat Router                            │   │
 │  │  REST: POST /api/chat    │    WebSocket: /ws/chat         │   │
-│  │  (Tek seferlik yanıt)    │    (Streaming yanıt)           │   │
+│  │  _preprocess_request() — ortak deterministik doğrulama    │   │
 │  └─────────┬────────────────┴──────────────┬─────────────────┘   │
 │            │                               │                     │
 │  ┌─────────▼───────────────────────────────▼─────────────────┐   │
-│  │                    LLM Service (Gemini 2.5 Flash)         │   │
-│  │         Konuşma yönetimi + Function Calling               │   │
+│  │           LLM Service (Gemini 2.5 Flash)                  │   │
+│  │   Konuşma yönetimi + Function Calling                     │   │
+│  │   Manuel tool-call döngüsü (max 10 tur, IndexError-safe)  │   │
 │  └─────────┬─────────────────────────────────────────────────┘   │
 │            │                                                     │
 │  ┌─────────▼─────────────────────────────────────────────────┐   │
-│  │                      Tool Functions                        │   │
+│  │              Tool Functions  +  number_utils              │   │
 │  │  get_bus_trips │ validate_seat │ validate_tc │ validate_   │   │
 │  │                │ _selection    │ _number     │ phone/email │   │
-│  │                │               │             │             │   │
-│  │  make_reservation                                          │   │
+│  │  make_reservation  (contextmanager DB, _sync_csv)         │   │
 │  └────────────────────────────────────────────────────────────┘   │
 │                                                                  │
 │  ┌───────────────┐ ┌───────────────┐ ┌─────────────────────┐    │
-│  │  STT Service  │ │  TTS Service  │ │  Emotion Service    │    │
-│  │  (Google      │ │  (Microsoft   │ │  (XLM-RoBERTa +    │    │
-│  │   Gemini)     │ │   Edge-TTS)   │ │   ACT Token Parse) │    │
+│  │  STT Service  │ │  TTS Service  │ │  Memory Service     │    │
+│  │  (Google      │ │  (Microsoft   │ │  (Gemini özetleme   │    │
+│  │   Gemini)     │ │   Edge-TTS)   │ │  + buffer snapshot) │    │
 │  └───────────────┘ └───────────────┘ └─────────────────────┘    │
 │                                                                  │
-│  ┌───────────────┐ ┌───────────────────────────────────────┐    │
-│  │Memory Service │ │       Semantic Cache Service           │    │
-│  │(Gemini Özet)  │ │  (all-MiniLM-L6-v2 + Cosine Sim.)    │    │
-│  └───────────────┘ └───────────────────────────────────────┘    │
+│  ┌───────────────────────────────────────────────────────────┐   │
+│  │       Semantic Cache  (varsayılan: KAPALI)                 │   │
+│  │  all-MiniLM-L6-v2 + Cosine Sim.                           │   │
+│  │  ENABLED=False → model yüklenmez, ~200 MB RAM tasarrufu   │   │
+│  └───────────────────────────────────────────────────────────┘   │
 │                                                                  │
 │  ┌───────────────────────────────────────────────────────────┐   │
 │  │              Veritabanı Katmanı (SQLite)                   │   │
@@ -109,34 +110,13 @@ Gemini, projede **tek LLM** olarak çalışır ve şu görevlerin tamamını üs
 6. ACT token üretimi (duygu bilgisi)
 7. **Çok Dilli (Multilingual) Destek:** Seçilen dile göre dinamik `SYSTEM_PROMPT` ve teknik yönlendirme (whisper) yönetimi.
 
----
+**Tool-Call Döngüsü Güvenliği:**
 
-### 2. XLM-RoBERTa (cardiffnlp/twitter-xlm-roberta-base-sentiment) — Duygu Analizi
-
-| Özellik | Detay |
-| --- | --- |
-| **Model** | `cardiffnlp/twitter-xlm-roberta-base-sentiment` |
-| **Mimari** | XLM-RoBERTa Base (HuggingFace Transformers) |
-| **Kullanım Amacı** | Metin tabanlı duygu tespiti (Sentiment Analysis) |
-| **Çalışma Ortamı** | Yerel (CPU/GPU), API gerektirmez |
-
-**Neden Bu Model?**
-
-- **Çok Dilli Destek (100+ Dil):** RoBERTa'nın XLM varyantı, Türkçe dahil 100'den fazla dilde eğitilmiştir. Türkçe için ayrı bir model indirmeye gerek kalmaz.  
-- **Hafif ve Hızlı:** ~278M parametreli Base boyutu, CPU üzerinde bile <100ms'de sonuç üretir. GPU mevcut olduğunda otomatik olarak GPU'ya geçer (`torch.cuda.is_available()`).  
-- **Twitter/Sosyal Medya Verisiyle Eğitim:** Kısa, konuşma dili ağırlıklı metinlerde (ki chatbot diyalogları buna çok yakındır) yüksek doğruluk sağlar.  
-- **Offline Çalışma:** Model bir kez indirilir ve tamamen yerel çalışır. Dış API'ye bağımlılık yoktur.
-
-**Hibrit Duygu Tespiti Stratejisi:**
-
-Projede duygu tespiti iki katmanlı bir yaklaşımla yapılır:
-
-1. **ACT Token (Birincil):** Gemini'ye verilen system prompt'ta, her yanıtın başına `<|ACT:"emotion":{"name":"happy","intensity":0.7}|>` formatında bir duygu token'ı eklemesi istenir. Bu, LLM'in kendi bağlam anlayışına dayalı en güvenilir duygu kaynağıdır.
-2. **Transformer Fallback (İkincil):** ACT token bulunamazsa XLM-RoBERTa modeli devreye girer ve metnin sentiment sınıfını (positive/negative/neutral) tespit ederek avatar duygu etiketine dönüştürür.
+`automatic_function_calling=False` ile döngü `llm_service.py` içinde manuel yönetilir. `_has_function_call()` guard fonksiyonu boş `candidates` veya eksik `parts` durumlarında `IndexError` üretmesini engeller. Sonsuz döngü önlemek için maksimum **10 iterasyon** limiti uygulanır.
 
 ---
 
-### 3. all-MiniLM-L6-v2 (Sentence Transformers) — Semantik Önbellekleme
+### 2. all-MiniLM-L6-v2 (Sentence Transformers) — Semantik Önbellekleme
 
 | Özellik | Detay |
 | --- | --- |
@@ -158,22 +138,22 @@ Projede duygu tespiti iki katmanlı bir yaklaşımla yapılır:
 3. Benzerlik ≥ 0.90 ise, LLM çağrısı atlanarak önceki yanıt (metin + ses + duygu) doğrudan döndürülür.
 4. Sayısal ağırlıklı girdiler (TC, telefon vb.) cache'ten otomatik bypass edilir; çünkü bu tür girdilerde anlamsal benzerlik yanıltıcıdır.
 
-**Kazanç:** Tekrarlı sorularda LLM + TTS maliyeti tamamen ortadan kalkar ve yanıt süresi ~5ms'ye düşer.
+**Kazanım:** Tekrarlı sorularda LLM + TTS maliyeti tamamen ortadan kalkar ve yanıt süresi ~5ms'ye düşer.
 
 ---
 
-### 4. Google Gemini — Konuşmadan Metne (STT)
+### 3. Google Gemini — Konuşmadan Metne (STT)
 
 | Özellik | Detay |
 | --- | --- |
-| **Model** | `gemini-2.0-flash` (Audio-to-Text) |
+| **Model** | `gemini-2.5-flash` (Audio-to-Text, aynı model) |
 | **Kullanım Amacı** | Kullanıcının sesli girdisini metne dönüştürme |
 | **Erişim** | Google GenAI SDK (API) |
 
 **Neden Gemini STT?**
 
 - **Native Multimodal Desteği:** Gemini 1.5/2.0+ modelleri ses verisini doğrudan (native) işleyebilir. Bu, üçüncü parti STT servislerine olan bağımlılığı azaltır ve gecikmeyi (latency) minimize eder.
-- **Doğal Dil Bağlamı:** Gemini, sadece sesi metne çevirmekle kalmaz, cümlenin gelişinden hangi kelimenin kullanılmış olabileceğini anlama yeteneğine sahiptir (Örn: "Duygu Sezar" gibi özel isimlerde daha başarılıdır).
+- **Doğal Dil Bağlamı:** Gemini, sadece sesi metne çevirmekle kalmaz, cümlenin gelişinden hangi kelimenin kullanılmış olabileceğini anlama yeteneğine sahiptir (Örn: özel isimlerde daha başarılıdır).
 - **Tek SDK:** LLM ve STT işlemleri aynı Google API anahtarı ve SDK üzerinden yürütülür.
 
 **STT Sonrası Metin Normalizasyonu:**
@@ -184,7 +164,7 @@ Türkçe sesli girişlerde STT çıktısı sıklıkla şu sorunları içerir:
 - Onluk-birlik parçalanması: *"altmış 1"* → `61`
 - E-posta adreslerinin sesli söylenmesi: *"duygu at gmail nokta com"* → `duygu@gmail.com`
 
-Bu sorunlar `stt_service.py` içindeki çok katmanlı normalizasyon pipeline'ı ile çözülür:
+Bu sorunlar `stt_service.py` içindeki çok katmanlı normalizasyon pipeline'ı ile çözülür; sayı dönüşüm mantığı `number_utils.py`'dan import edilir:
 
 1. **Bağlam Tespiti:** Girdi e-posta mı, sayısal veri mi, yoksa doğal metin mi?
 2. **Türkçe Sayı Dönüşümü:** Yazıyla söylenen sayılar hane hane rakamlara çevrilir.
@@ -193,7 +173,7 @@ Bu sorunlar `stt_service.py` içindeki çok katmanlı normalizasyon pipeline'ı 
 
 ---
 
-### 5. Microsoft Edge-TTS — Metinden Konuşmaya (TTS)
+### 4. Microsoft Edge-TTS — Metinden Konuşmaya (TTS)
 
 | Özellik | Detay |
 | --- | --- |
@@ -213,6 +193,7 @@ TTS motorlarına gönderilmeden önce metin şu işlemlerden geçer:
 - ACT token'ları ve DELAY işaretleri temizlenir
 - Sayılar Türkçe okunuşlarına dönüştürülür: `1.191,38 TL` → *"bin yüz doksan bir lira otuz sekiz kuruş"*
 - 8+ haneli uzun sayılar (PNR, ID) rakam rakam okunur: `12345678` → *"bir iki üç dört beş altı yedi sekiz"*
+- Geçici ağ hataları (503) için otomatik **1 yeniden deneme** uygulanır
 
 ---
 
@@ -222,19 +203,19 @@ TTS motorlarına gönderilmeden önce metin şu işlemlerden geçer:
 
 | Modül | Dosya | Açıklama |
 | --- | --- | --- |
-| **LLM Service** | `llm_service.py` | Gemini API ile iletişim, system prompt oluşturma, konuşma geçmişi yönetimi, streaming + non-streaming yanıt üretimi |
-| **Tools** | `tools.py` | Gemini'nin çağırdığı 6 araç fonksiyonu: sefer arama, koltuk doğrulama, TC doğrulama, telefon doğrulama, e-posta doğrulama, rezervasyon yapma |
-| **STT Service** | `stt_service.py` | Google Gemini ile ses→metin dönüşümü, Türkçe sayı/e-posta/telefon normalizasyonu |
-| **TTS Service** | `tts_service.py` | Microsoft Edge-TTS ile metin→ses dönüşümü, Türkçe sayı okunuş hazırlığı |
-| **Emotion Service** | `emotion_service_v2.py` | ACT token ayrıştırma + XLM-RoBERTa tabanlı duygu analizi |
-| **Semantic Cache** | `semantic_cache_service.py` | all-MiniLM-L6-v2 ile vektör tabanlı semantik önbellek, tekrarlı sorgularda LLM bypass |
-| **Memory Service** | `memory_service.py` | Her 10 mesajda bir Gemini ile konuşma özetlemesi, uzun konuşmalarda bağlam penceresi yönetimi |
+| **Number Utils** | `number_utils.py` | ★ **Yeni.** Türkçe/İngilizce sayı kelimesi→rakam dönüşümünün tek kaynağı. `tools.py` ve `stt_service.py` buradan import eder; ~600 satır tekrar kod elimine edildi. |
+| **LLM Service** | `llm_service.py` | Gemini API ile iletişim, system prompt oluşturma, konuşma geçmişi yönetimi. Güvenli tool-call döngüsü: `_has_function_call()` guard + max 10 iterasyon limiti. |
+| **Tools** | `tools.py` | Gemini'nin çağırdığı 6 araç fonksiyonu. `contextmanager` ile garantili DB bağlantısı (hata → rollback → close). `_sync_csv` yardımcısı ile CSV yedekleme. |
+| **STT Service** | `stt_service.py` | Google Gemini ile ses→metin dönüşümü. Bağlam tespiti + `number_utils` tabanlı Türkçe/İngilizce normalizasyon pipeline'ı. |
+| **TTS Service** | `tts_service.py` | Microsoft Edge-TTS ile metin→ses dönüşümü, Türkçe sayı okunuş hazırlığı, otomatik retry. |
+| **Semantic Cache** | `semantic_cache_service.py` | all-MiniLM-L6-v2 ile vektör tabanlı semantik önbellek. Varsayılan olarak kapalıdır (`_ENABLED = False`); kapalıyken model yüklenmez. |
+| **Memory Service** | `memory_service.py` | Her `SUMMARIZE_EVERY` mesajda bir Gemini ile konuşma özetlemesi. `await` öncesi buffer snapshot alınır; hata durumunda mesajlar kaybolmaz. |
 
 ### Backend Router'ları (`backend/routers/`)
 
 | Router | Endpoint | Açıklama |
 | --- | --- | --- |
-| **Chat** | `POST /api/chat`, `WS /ws/chat` | Ana sohbet endpoint'leri. Deterministik doğrulama kısa yolları + Gemini LLM + TTS + duygu analizi pipeline'ı |
+| **Chat** | `POST /api/chat`, `WS /ws/chat` | Ortak `_preprocess_request()` fonksiyonu: deterministik doğrulama kısa yolları + `[SİSTEM BİLGİSİ]` injection + `[ABSOLUTE SYSTEM TRUTH]` injection. REST ve WS'de aynı kod tekrarlanmıyor. |
 | **STT** | `POST /api/stt` | Ses dosyası alır, transkripsiyon döndürür |
 | **TTS** | `POST /api/tts` | Metin alır, base64 kodlanmış ses döndürür |
 
@@ -259,11 +240,17 @@ Kullanıcı: "Yarın Ankara'dan İstanbul'a gitmek istiyorum"
 [1] STT Normalizasyonu (sesli giriş ise)
     │
     ▼
-[2] Semantic Cache Kontrolü → Cache HIT ise → Önceki yanıtı döndür
+[2] _preprocess_request()
+    ├── Deterministik koltuk / telefon / e-posta doğrulaması
+    ├── [SİSTEM BİLGİSİ] injection (doğrulama sonuçları)
+    └── [ABSOLUTE SYSTEM TRUTH] injection (halüsinasyon önleme)
+    │
+    ▼
+[3] Semantic Cache Kontrolü → Cache HIT ise → Önceki yanıtı döndür
     │                                              │
     │ Cache MISS                                   │
     ▼                                              │
-[3] Gemini 2.5 Flash                               │
+[4] Gemini 2.5 Flash (tool-call döngüsü, max 10 tur)
     ├── NLU: Niyet = sefer arama                   │
     ├── Slot: kalkış=Ankara, varış=İstanbul         │
     ├── Function Call: get_bus_trips(...)           │
@@ -271,13 +258,10 @@ Kullanıcı: "Yarın Ankara'dan İstanbul'a gitmek istiyorum"
     └── NLG: "Yarın için şu seferler mevcut..."    │
     │                                              │
     ▼                                              │
-[4] TTS: Yanıtı seslendir (Microsoft Edge-TTS) │
+[5] TTS: Yanıtı seslendir (Microsoft Edge-TTS)     │
     │                                              │
     ▼                                              │
-[5] Duygu Analizi: ACT Token → "happy"             │
-    │                                              │
-    ▼                                              │
-[6] Semantic Cache'e Kaydet                        │
+[6] Duygu: ACT Token → avatar ifadesi              │
     │                                              │
     ▼ ◄──────────────────────────────────────────────
 [7] Frontend: Metin + Ses + Avatar Duygu Güncelle
@@ -301,6 +285,16 @@ Kullanıcı: "Yarın Ankara'dan İstanbul'a gitmek istiyorum"
 
 ## 🛡️ Teknik Öne Çıkanlar
 
+### number_utils.py — Tek Kaynak Prensibi
+
+Daha önce `tools.py`, `stt_service.py` ve `routers/chat.py` içinde yaklaşık **600 satır** olarak üç kez tekrarlanan Türkçe/İngilizce sayı kelimesi→rakam dönüşüm mantığı `services/number_utils.py` modülüne taşındı. Tüm modüller bu tek kaynaktan import eder.
+
+Sağlanan temel fonksiyonlar:
+
+- `extract_digit_stream(text)` — karışık kelime+rakam girdisini saf rakam dizisine çevirir (yüzler, onluklar, bileşikler, STT parçalanma tamiri dahil)
+- `normalize_phone_digits(text)` — telefon normalizasyonu (ülke kodu stripping dahil)
+- `normalize_text(text)` — Türkçe karakter normalizasyonu + boşluk temizliği
+
 ### T.C. Kimlik Doğrulama Algoritması
 
 Standart 11 haneli algoritmik doğrulama uygulanır:
@@ -314,15 +308,39 @@ Sesli girişlerde STT parçalanmalarını (ör. "beş yüz otuz yedi altmış ik
 
 ### Deterministik Doğrulama Kısa Yolları
 
-Chat router'da, LLM'in gereksiz tur kaybetmesini önlemek için belirli bağlamlarda deterministik doğrulama uygulanır:
+Chat router'da, LLM'in gereksiz tur kaybetmesini önlemek için belirli bağlamlarda deterministik doğrulama uygulanır. Bu mantık REST ve WebSocket endpoint'lerinde daha önce **tamamen tekrarlanıyordu**; artık tek `_preprocess_request()` fonksiyonunda toplanmıştır:
 
 - Bot telefon numarası sorduysa ve kullanıcı rakam gönderdiyse → `validate_phone_number` LLM'den önce çağrılır
 - Bot koltuk sorduysa ve kullanıcı kısa bir sayı gönderdiyse → `validate_seat_selection` doğrudan çağrılır
+- Bot e-posta sorduysa → `validate_email_address` direkt çağrılır
 - Bu sonuçlar, LLM'e `[SİSTEM BİLGİSİ]` formatında fısıldanarak bir sonraki adıma geçişi hızlandırır
+
+### Halüsinasyon Önleme — ABSOLUTE SYSTEM TRUTH
+
+`_inject_ground_truth()`, konuşma geçmişinden onaylanmış Sefer ID, güzergah, tarih ve koltuk bilgilerini çekerek her mesaja şu formatı ekler:
+
+```
+[ABSOLUTE SYSTEM TRUTH (NEVER HALLUCINATE): STRICT_ID=42 | STRICT_ROUTE=Ankara to Istanbul | STRICT_DATE=2026-03-22 | STRICT_SEAT=5]
+```
+
+Bu sayede LLM'in kendi eğitim verisinden (`"12345"`, `"İstanbul-Ankara"` vb.) uydurmaya çalışması engellenir.
+
+### Güvenli Veritabanı Bağlantısı
+
+`tools.py`'daki tüm DB işlemleri `contextmanager` ile sarılmıştır:
+
+```python
+with _db(DB_PATH) as conn:
+    ...  # commit otomatik; hata → rollback otomatik; finally → close garantili
+```
+
+Daha önce hata senaryolarında bağlantı açık kalabiliyordu.
 
 ### Konuşma Hafızası (Memory Service)
 
-Uzun konuşmalarda Gemini'nin token bağlam penceresi dolabilir. Bu sorunu çözmek için her 10 mesajda bir Gemini ile konuşmanın özeti üretilir. Sonraki mesajlarda bu özet system prompt'a eklenir, böylece "unutkanlık" önlenir.
+Uzun konuşmalarda Gemini'nin token bağlam penceresi dolabilir. Bu sorunu çözmek için her `SUMMARIZE_EVERY` mesajda bir Gemini ile konuşmanın özeti üretilir. Sonraki mesajlarda bu özet system prompt'a eklenir, böylece "unutkanlık" önlenir.
+
+**Race Condition Düzeltmesi:** `_summarize()` fonksiyonu `await` öncesinde buffer'ın snapshot'ını alır. Özetleme başarısız olursa mesajlar kaybolmaz; buffer eski hâline restore edilir.
 
 ### WebSocket Sağlık ve Hata Yönetimi
 
@@ -351,24 +369,24 @@ Bus Ticket Booking Agent/
     │   ├── rezervasyonlar.db   # Rezervasyon veritabanı (SQLite)
     │   ├── bilet_sistemi.csv   # Sefer yedek dosyası (CSV)
     │   └── rezervasyonlar.csv  # Rezervasyon yedek dosyası (CSV)
-    ├── main.py                 # FastAPI uygulama giriş noktası
-    ├── config.py               # Ayarlar, system prompt, API anahtarları
-    ├── requirements.txt        # Python bağımlılıkları
+    ├── main.py                 # FastAPI giriş noktası; logging config
+    ├── config.py               # Ayarlar, system prompt, type-safe env parsing
+    ├── requirements.txt        # Python bağımlılıkları (sadece aktif paketler)
     ├── .env                    # Ortam değişkenleri (API anahtarları)
     │
     ├── routers/
-    │   ├── chat.py             # Sohbet endpoint'leri (REST + WebSocket)
+    │   ├── chat.py             # REST + WebSocket; ortak _preprocess_request()
     │   ├── stt.py              # Konuşma tanıma endpoint'i
     │   └── tts.py              # Ses sentezi endpoint'i
     │
     └── services/
-        ├── llm_service.py      # Gemini LLM entegrasyonu
-        ├── tools.py            # Araç fonksiyonları (sefer, TC, telefon, email, rezervasyon)
-        ├── stt_service.py      # Google Gemini STT + Türkçe normalizasyon
-        ├── tts_service.py      # Microsoft Edge-TTS
-        ├── emotion_service_v2.py  # Duygu analizi (ACT + XLM-RoBERTa)
-        ├── semantic_cache_service.py # Semantik önbellek
-        └── memory_service.py   # Konuşma özeti / hafıza yönetimi
+        ├── number_utils.py         # ★ Yeni: paylaşımlı sayı parse utility
+        ├── llm_service.py          # Gemini LLM + güvenli tool-call döngüsü
+        ├── tools.py                # 6 araç; contextmanager DB; _sync_csv
+        ├── stt_service.py          # Gemini STT + bağlam tespiti + normalize
+        ├── tts_service.py          # Edge-TTS + Türkçe sayı okunuşu + retry
+        ├── semantic_cache_service.py  # MiniLM cache (varsayılan: kapalı)
+        └── memory_service.py       # Gemini özetleme + buffer snapshot fix
 ```
 
 ---
@@ -379,7 +397,6 @@ Bus Ticket Booking Agent/
 
 - Python 3.10+
 - Node.js (Live Server için, isteğe bağlı)
-- GPU (isteğe bağlı, duygu analizi modelini hızlandırır)
 
 ### 1. Backend Kurulumu
 
@@ -396,9 +413,10 @@ pip install -r requirements.txt
 
 ```env
 GOOGLE_API_KEY=your_google_api_key
-GEMINI_CHAT_MODEL=gemini-2.1-flash
+GEMINI_CHAT_MODEL=gemini-2.5-flash
 DEFAULT_LANG=tr
 PORT=8001
+CORS_ORIGINS=*
 ```
 
 ### 3. Çalıştırma
@@ -426,9 +444,6 @@ Backend `http://localhost:8001` adresinde, frontend ise `http://localhost:3000` 
 | **Uvicorn** | — | ASGI sunucu |
 | **google-genai** | — | Google Gemini API SDK (LLM + STT) |
 | **edge-tts** | — | TTS Motoru (Microsoft) |
-| **transformers** | HuggingFace | XLM-RoBERTa duygu modeli |
-| **sentence-transformers** | — | Semantik cache embedding |
-| **torch** | PyTorch | Model inference |
 | **SQLite** | Built-in | Veritabanı |
 | **Three.js** | r164 | 3D render engine |
 | **@pixiv/three-vrm** | 3.0.0 | VRM model yükleme/animasyon |
@@ -444,7 +459,6 @@ Backend `http://localhost:8001` adresinde, frontend ise `http://localhost:3000` 
 | LLM Yanıt Süresi (ortalama) | ~1.5–3 saniye |
 | TTS Üretim Süresi | ~0.5–1.5 saniye |
 | Semantik Cache Hit Süresi | ~5ms |
-| Duygu Analizi (Transformer) | ~50–100ms (CPU) |
 | STT Transkripsiyon | ~1–2 saniye |
 | Avatar FPS | 60 FPS (modern tarayıcı) |
 

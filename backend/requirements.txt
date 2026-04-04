@@ -2,16 +2,9 @@
 fastapi
 uvicorn[standard]
 edge-tts
-elevenlabs
 python-dotenv
 python-multipart
 websockets
 httpx
 watchfiles
 google-genai
-torch
-transformers
-langchain
-langchain-google-genai
-sentence-transformers
-sentencepiece
