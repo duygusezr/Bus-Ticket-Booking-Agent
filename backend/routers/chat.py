@@ -1,4 +1,3 @@
-import re
 import sys
 import time
 import logging
@@ -109,7 +108,7 @@ async def websocket_chat(websocket: WebSocket):
                 logger.info("WS LLM=%.3fs", time.perf_counter() - t_llm)
 
                 t_tts = time.perf_counter()
-                clean_text = re.sub(r"<\|ACT:.*?\|>", "", full_response, flags=re.DOTALL).strip()
+                clean_text = full_response.strip()
                 audio_base64 = await generate_tts(clean_text, lang)
                 logger.info(
                     "WS TTS=%.3fs TOTAL=%.3fs",

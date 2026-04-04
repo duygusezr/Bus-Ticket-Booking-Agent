@@ -337,11 +337,11 @@ function updateEyeMovement(elapsed, delta) {
 }
 
 // ============================================================
-// ACT TOKEN TEMİZLEYİCİ
+// METİN TEMİZLEYİCİ
 // ============================================================
 function processActTokens(text) {
     if (!text) return "";
-    return text.replace(/<\|ACT:.*?\|>/gs, '').replace(/<\|DELAY:.*?\|>/g, '').trim();
+    return text.trim();
 }
 
 // ============================================================
@@ -424,10 +424,7 @@ function initWebSocket() {
 
         if (data.type === 'text') {
             currentFullResponse += data.content;
-            const clean = currentFullResponse
-                .replace(/<\|ACT:.*?\|>/gs, '')
-                .replace(/<\|ACT:.*$/gs, '')
-                .trim();
+            const clean = currentFullResponse.trim();
             if (clean) {
                 if (subtitle) subtitle.textContent = "";
                 if (!currentAiBubble) {
