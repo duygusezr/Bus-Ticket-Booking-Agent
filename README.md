@@ -8,6 +8,8 @@
 
 Bu proje, geleneksel web tabanlı otobüs bileti satın alma sürecini **yapay zekâ destekli bir konuşma arayüzüne** dönüştürmeyi amaçlamaktadır. Kullanıcı, ekrandaki 3D avatar (Ela) ile Türkçe sesli veya yazılı olarak etkileşime girerek menülere, formlara veya karmaşık filtre panellerine ihtiyaç duymadan bilet rezervasyonu yapabilir.
 
+This project aims to transform the traditional web-based bus ticket purchasing process into an **AI-powered conversational interface**. Users can interact with the 3D avatar (Ela) on screen via voice or text in Turkish or English, completing ticket reservations without navigating menus, forms, or complex filter panels.
+
 ### Çözmek İstediğimiz Problem
 
 Mevcut otobüs bileti platformlarında kullanıcı, güzergah seçimi → tarih seçimi → koltuk seçimi → yolcu bilgileri → ödeme gibi çok adımlı bir form sürecinden geçmek zorundadır. Bu süreç özellikle yaşlı kullanıcılar, teknolojiye uzak bireyler veya hareket halindeki kullanıcılar için zorlu olabilmektedir.
@@ -107,8 +109,7 @@ Gemini, projede **tek LLM** olarak çalışır ve şu görevlerin tamamını üs
 3. Uygun araçları çağırma (`get_bus_trips`, `validate_tc_number`, `make_reservation` vb.)
 4. Araç sonuçlarını insani bir dilde kullanıcıya aktarma (NLG)
 5. Konuşma özetleme (Memory Service)
-6. ACT token üretimi (duygu bilgisi)
-7. **Çok Dilli (Multilingual) Destek:** Seçilen dile göre dinamik `SYSTEM_PROMPT` ve teknik yönlendirme (whisper) yönetimi.
+6. **Çok Dilli (Multilingual) Destek:** Seçilen dile göre dinamik `SYSTEM_PROMPT` ve teknik yönlendirme (whisper) yönetimi.
 
 **Tool-Call Döngüsü Güvenliği:**
 
@@ -226,8 +227,35 @@ TTS motorlarına gönderilmeden önce metin şu işlemlerden geçer:
 | **3D Avatar** | Three.js + @pixiv/three-vrm | VRM 1.0 formatında 3D karakter modeli. Göz kırpma, nefes alma, kafa hareketi, lip-sync animasyonları |
 | **Lip-Sync** | Web Audio API (FFT) | Ses frekans analizi ile gerçek zamanlı ağız hareketleri (aa, ih, ee, oh, ou morph'ları) |
 | **Duygu Sistemi** | Custom Expression Engine | 10 farklı duygu durumu (happy, sad, angry, think, curious vb.) + yumuşak geçiş (lerp) |
-| **WebSocket Chat** | Native WebSocket | Streaming metin + ses + duygu güncellemeleri |
+| **WebSocket Chat** | Native WebSocket | Streaming metin + ses güncellemeleri |
 | **Ses Kayıt** | MediaRecorder API | Basılı tutarak konuşma (push-to-talk) |
+
+---
+
+## 🌐 Çok Dilli Destek (TR / EN)
+
+Sistem, Türkçe ve İngilizce olmak üzere iki dili tam olarak destekler. Dil seçimi frontend'deki TR/EN butonları aracılığıyla yapılır ve seçilen dil her istekte backend'e iletilir.
+
+**Dil bazlı farklılaşma şu katmanlarda uygulanır:**
+
+| Katman | Türkçe | İngilizce |
+| --- | --- | --- |
+| **System Prompt** | `SYSTEM_PROMPT` (`config.py`) | `SYSTEM_PROMPT_EN` (`config.py`) |
+| **Dil kuralı** | `SADECE Türkçe cevap ver` | `Reply ONLY in English` |
+| **TTS sesi** | `tr-TR-EmelNeural` | `en-US-AriaNeural` |
+| **STT talimatı** | Türkçe transkripsiyon yönergesi | İngilizce transkripsiyon yönergesi |
+| **Sistem enjeksiyonu** | `[SİSTEM BİLGİSİ: ...]` | `[SYSTEM INFORMATION: ...]` |
+| **Özet dili** | Türkçe | İngilizce (buffer'daki İngilizce kelimelerle otomatik tespit) |
+
+**`SYSTEM_PROMPT_EN` Gerekçesi:**
+
+Yalnızca dil kuralı eklemek yetmez; rezervasyon akışının doğru çalışması için tüm adım tanımları, veri bütünlüğü uyarıları ve whisper formatları İngilizce olarak ayrıca yazılmıştır. Örneğin:
+
+- `[SYSTEM INFORMATION: Tool result: ...]` — doğrulama sonuçları İngilizce enjekte edilir
+- `STRICT_LANGUAGE RULE: Reply ONLY in English` — sistem prompt sonuna eklenir
+- Özet adımında `--- SUMMARY OF PREVIOUS CONVERSATION ---` başlığı kullanılır
+
+Bu sayede kullanıcı EN moduna geçtiğinde tüm konuşma akışı, hata mesajları ve özetler tutarlı biçimde İngilizce kalır.
 
 ---
 
@@ -260,11 +288,8 @@ Kullanıcı: "Yarın Ankara'dan İstanbul'a gitmek istiyorum"
     ▼                                              │
 [5] TTS: Yanıtı seslendir (Microsoft Edge-TTS)     │
     │                                              │
-    ▼                                              │
-[6] Duygu: ACT Token → avatar ifadesi              │
-    │                                              │
     ▼ ◄──────────────────────────────────────────────
-[7] Frontend: Metin + Ses + Avatar Duygu Güncelle
+[6] Frontend: Metin + Ses Güncelle
 ```
 
 ### Rezervasyon Adımları

@@ -1,8 +1,7 @@
 """
 Semantic cache — disabled by default (ENABLED = False).
-SentenceTransformer is NOT loaded when disabled to avoid wasting ~200MB RAM.
+numpy ve SentenceTransformer sadece ENABLED=True olduğunda import edilir.
 """
-import numpy as np
 import re
 import time
 import logging
@@ -15,7 +14,7 @@ logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore", message=".*unauthenticated.*")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
-_ENABLED = False  # Flip to True to activate
+_ENABLED = False  # Flip to True to activate (requires: pip install numpy sentence-transformers)
 
 
 class SemanticCache:
@@ -26,36 +25,43 @@ class SemanticCache:
         self.threshold: float = 0.90
         self.max_items: int = 500
         self._model = None
+        self._np = None
 
         if self.ENABLED:
             self._load_model()
 
     def _load_model(self) -> None:
         import sys, io
-        from sentence_transformers import SentenceTransformer
-        _old_stdout = sys.stdout
-        sys.stdout = io.StringIO()
         try:
-            self._model = SentenceTransformer("all-MiniLM-L6-v2")
-        finally:
-            sys.stdout = _old_stdout
-        print("[SEMANTIC CACHE] Model loaded.")
+            import numpy as np
+            self._np = np
+            from sentence_transformers import SentenceTransformer
+            _old_stdout = sys.stdout
+            sys.stdout = io.StringIO()
+            try:
+                self._model = SentenceTransformer("all-MiniLM-L6-v2")
+            finally:
+                sys.stdout = _old_stdout
+            print("[SEMANTIC CACHE] Model loaded.")
+        except ImportError as e:
+            print(f"[SEMANTIC CACHE] Import error, disabling: {e}")
+            self.ENABLED = False
 
     def _clean(self, query: str) -> str:
         return re.sub(r"\[SİSTEM BİLGİSİ.*?\]", "", query).strip()
 
     def search(self, query: str) -> Optional[Dict[str, Any]]:
-        if not self.ENABLED or self._model is None:
+        if not self.ENABLED or self._model is None or self._np is None:
             return None
 
         clean = self._clean(query)
         if len(clean) < 5 or not self._cache:
             return None
 
-        # Bypass for digit-heavy inputs (TC, seat, phone)
         if sum(c.isdigit() for c in clean) > len(clean) / 2:
             return None
 
+        np = self._np
         t0 = time.perf_counter()
         vec = self._model.encode(clean, convert_to_numpy=True)
 
