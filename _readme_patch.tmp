@@ -1,5 +1,0 @@
-## 📌 Projenin Amacı
-
-Bu proje, geleneksel web tabanlı otobüs bileti satın alma sürecini **yapay zekâ destekli bir konuşma arayüzüne** dönüştürmeyi amaçlamaktadır. Kullanıcı, ekrandaki 3D avatar (Ela) ile Türkçe sesli veya yazılı olarak etkileşime girerek menülere, formlara veya karmaşık filtre panellerine ihtiyaç duymadan bilet rezervasyonu yapabilir.
-
-This project aims to transform the traditional web-based bus ticket purchasing process into an **AI-powered conversational interface**. Users can interact with the 3D avatar (Ela) on screen via voice or text in Turkish or English, completing ticket reservations without navigating menus, forms, or complex filter panels.
