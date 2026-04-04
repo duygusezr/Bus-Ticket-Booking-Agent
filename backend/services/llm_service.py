@@ -121,7 +121,9 @@ async def generate_chat_response(
                     continue
 
                 try:
-                    result: ToolResult = tools_map[fn.name](**fn.args)
+                    result: ToolResult = await tools_map[fn.name](**fn.args) \
+                        if asyncio.iscoroutinefunction(tools_map[fn.name]) \
+                        else tools_map[fn.name](**fn.args)
                 except Exception as tool_err:
                     result = ToolResult(message=f"Hata: {tool_err}", success=False)
 

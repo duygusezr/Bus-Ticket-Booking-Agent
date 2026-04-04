@@ -1,5 +1,6 @@
 import logging
 import sqlite3
+import asyncio
 import csv
 import random
 import string
@@ -26,6 +27,12 @@ DB_PATH = BASE_DIR / "database" / "bilet_sistemi.db"
 CSV_PATH = BASE_DIR / "database" / "bilet_sistemi.csv"
 REZ_DB_PATH = BASE_DIR / "database" / "rezervasyonlar.db"
 REZ_CSV_PATH = BASE_DIR / "database" / "rezervasyonlar.csv"
+
+# Rezervasyon işlemi iki ayrı DB'ye yazdığından, eş zamanlı yazmaları
+# önlemek için process-level bir kilit kullanılır.
+# Not: Bu kilit tek process için yeterlidir. Yatay ölçekleme gerektiğinde
+# Redis tabanlı dağıtık bir kilit ile değiştirilmeli.
+_reservation_lock = asyncio.Lock()
 
 
 # ─────────────────────────────────────────────
@@ -121,13 +128,13 @@ def _hash_pii(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _generate_unique_pnr(conn: sqlite3.Connection, table: str = "rez.rezervasyonlar", length: int = 8) -> str:
-    """Verilen tabloda benzersizliği garantilenmiş PNR kodu üret (ATTACH DB alias desteği)."""
+def _generate_unique_pnr(conn: sqlite3.Connection, length: int = 8) -> str:
+    """Verilen bağlantıda benzersizliği garantilenmiş PNR kodu üret."""
     charset = string.ascii_uppercase + string.digits
     for _ in range(20):
         pnr = "".join(random.choices(charset, k=length))
         exists = conn.execute(
-            f"SELECT 1 FROM {table} WHERE pnr_code = ?", (pnr,)
+            "SELECT 1 FROM rezervasyonlar WHERE pnr_code = ?", (pnr,)
         ).fetchone()
         if not exists:
             return pnr
@@ -469,7 +476,7 @@ def validate_email_address(email: str) -> ToolResult:
     )
 
 
-def make_reservation(
+async def make_reservation(
     sefer_id: int,
     yolcu_ad_soyad: str,
     tc_no: str,
@@ -478,21 +485,28 @@ def make_reservation(
     koltuk_no: str,
 ) -> ToolResult:
     """
-    ATTACH DATABASE kullanarak her iki veritabanında atomik olarak koltuk rezervasyonu yap.
-    TC ve telefon depolanmadan önce SHA-256 ile hashlenir — asla düz metin saklanmaz.
+    İki ayrı SQLite veritabanına güvenli yaz: seferler.db ve rezervasyonlar.db.
+
+    ATTACH DATABASE yerine iki ayrı bağlantı kullanılır çünkü ATTACH her istek
+    için kilit yarışması yaratır; SQLite WAL modunda bile tek-yazar kuralı
+    geçerlidir. asyncio.Lock ile eş zamanlı yazma engellenir.
+
+    TC ve telefon depolanmadan önce SHA-256 ile hashlenir.
     """
-    try:
-        is_valid, msg = validate_tc_kimlik(tc_no)
-        if not is_valid:
-            return ToolResult(message=f"Rezervasyon yapılamadı: {msg}", success=False)
+    is_valid, msg = validate_tc_kimlik(tc_no)
+    if not is_valid:
+        return ToolResult(message=f"Rezervasyon yapılamadı: {msg}", success=False)
 
-        tc_hash = _hash_pii(tc_no)
-        phone_hash = _hash_pii(telefon)
+    tc_hash = _hash_pii(tc_no)
+    phone_hash = _hash_pii(telefon)
 
-        with _db(DB_PATH) as conn:
-            conn.execute(f"ATTACH DATABASE '{REZ_DB_PATH}' AS rez")
-
-            row = conn.execute("SELECT * FROM seferler WHERE id = ?", (sefer_id,)).fetchone()
+    async with _reservation_lock:
+        # Koltuk kontrol + güncelleme (seferler DB)
+        with _db(DB_PATH) as trips_conn:
+            trips_conn.execute("PRAGMA journal_mode=WAL")
+            row = trips_conn.execute(
+                "SELECT * FROM seferler WHERE id = ?", (sefer_id,)
+            ).fetchone()
             if not row:
                 return ToolResult(message=f"Hata: Sefer ID {sefer_id} bulunamadı.", success=False)
 
@@ -507,16 +521,18 @@ def make_reservation(
                 )
 
             seats.remove(str(koltuk_no))
-            conn.execute(
+            trips_conn.execute(
                 "UPDATE seferler SET available_seats = ? WHERE id = ?",
                 (",".join(seats), sefer_id),
             )
 
-            pnr_code = _generate_unique_pnr(conn, table="rez.rezervasyonlar")
+        # Rezervasyon kaydı (rezervasyonlar DB)
+        with _db(REZ_DB_PATH) as rez_conn:
+            rez_conn.execute("PRAGMA journal_mode=WAL")
+            pnr_code = _generate_unique_pnr(rez_conn)
             transaction_time = datetime.now().strftime("%m/%d/%Y")
-
-            conn.execute(
-                "INSERT INTO rez.rezervasyonlar "
+            rez_conn.execute(
+                "INSERT INTO rezervasyonlar "
                 "(pnr_code, sefer_id, passenger_full_name, tc_identity_hash, phone_hash, "
                 "email_address, seat_number, transaction_datetime, reservation_status) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -526,13 +542,9 @@ def make_reservation(
                 ),
             )
 
-        logger.info("Rezervasyon başarılı: PNR=%s Sefer=%s Yolcu=%s", pnr_code, sefer_id, yolcu_ad_soyad)
-        return ToolResult(
-            message=f"Başarılı! PNR Kodu: {pnr_code}",
-            success=True,
-            data={"pnr": pnr_code},
-        )
-
-    except Exception as e:
-        logger.exception("Rezervasyon hatası")
-        return ToolResult(message=f"Rezervasyon sırasında hata: {e}", success=False)
+    logger.info("Rezervasyon başarılı: PNR=%s Sefer=%s Yolcu=%s", pnr_code, sefer_id, yolcu_ad_soyad)
+    return ToolResult(
+        message=f"Başarılı! PNR Kodu: {pnr_code}",
+        success=True,
+        data={"pnr": pnr_code},
+    )

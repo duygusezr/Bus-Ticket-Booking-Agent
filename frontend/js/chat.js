@@ -1,0 +1,223 @@
+/**
+ * js/chat.js
+ * WebSocket bağlantısı, mesaj gönderme, sohbet geçmişi UI,
+ * dil desteği.
+ */
+import { playBase64Audio, stopAudio, initWebAudio } from './audio.js';
+
+// ─── Yapılandırma ─────────────────────────────────────────────
+
+const _cfg   = window.__APP_CONFIG__ || {};
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+export const API_BASE = _cfg.apiBase || (isLocal ? 'http://localhost:8001' : '');
+export const WS_BASE  = _cfg.wsBase  || (isLocal ? 'ws://localhost:8001'  : '');
+
+if (!API_BASE) {
+    console.warn('[CONFIG] API_BASE tanımlı değil. window.__APP_CONFIG__.apiBase ayarlayın.');
+}
+console.log(`[CONFIG] API: ${API_BASE} | WS: ${WS_BASE}`);
+
+// ─── Oturum ───────────────────────────────────────────────────
+
+export const SESSION_ID = crypto.randomUUID();
+
+// ─── UI referansları ──────────────────────────────────────────
+
+const subtitle  = document.getElementById('subtitle');
+const chatInput = document.getElementById('chat-input');
+const historyList = document.getElementById('history-list');
+
+// ─── Dil ─────────────────────────────────────────────────────
+
+let _currentLang = 'tr';
+export const getLang = () => _currentLang;
+
+const translations = {
+    tr: {
+        subtitle:  'Otobüs bileti Randevu AI Asistanı',
+        placeholder: 'Bir mesaj yazın...',
+        welcome:   'Merhaba, ben Ela. Size en uygun otobüs biletini bulmam için nereden nereye ve hangi tarihte seyahat edeceğinizi söyler misiniz?',
+        thinking:  'Düşünüyor...',
+    },
+    en: {
+        subtitle:  'Bus Ticket Booking AI Assistant',
+        placeholder: 'Type a message...',
+        welcome:   "Hello, I'm Ela. Could you tell me where you are traveling from, your destination, and your travel dates so I can find the best bus ticket for you?",
+        thinking:  'Thinking...',
+    },
+};
+
+export function setLanguage(lang) {
+    _currentLang = lang;
+    if (chatInput) chatInput.placeholder = translations[lang].placeholder;
+    const aiSub = document.getElementById('ai-subtitle');
+    if (aiSub) aiSub.textContent = translations[lang].subtitle;
+    const welcomeMsg = document.getElementById('welcome-msg');
+    if (welcomeMsg) {
+        const isCurrent = [translations.tr.welcome, translations.en.welcome]
+            .includes(welcomeMsg.textContent);
+        if (isCurrent) welcomeMsg.textContent = translations[lang].welcome;
+    }
+    document.getElementById('lang-tr')?.classList.toggle('active', lang === 'tr');
+    document.getElementById('lang-en')?.classList.toggle('active', lang === 'en');
+}
+
+// ─── Sohbet geçmişi UI ───────────────────────────────────────
+
+const chatHistory = [];
+
+/**
+ * Kullanıcı veya asistan mesajını sohbet paneline ekle.
+ * Kullanıcı girdisi textContent ile eklenir — XSS güvenli.
+ */
+export function addToHistoryPanel(role, text) {
+    const item = document.createElement('div');
+    item.className = `history-item ${role === 'user' ? 'user' : 'ai'}`;
+
+    if (role === 'user') {
+        const content = document.createElement('div');
+        content.className = 'content';
+        content.textContent = text.trim();  // XSS güvenli
+        item.appendChild(content);
+    } else {
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        const img = document.createElement('img');
+        img.src = './ela_avatar.png';
+        img.alt = 'bot';
+        img.className = 'avatar-icon';
+        const content = document.createElement('div');
+        content.className = 'content';
+        content.textContent = text.trim();  // XSS güvenli
+        bubble.appendChild(img);
+        bubble.appendChild(content);
+        item.appendChild(bubble);
+    }
+
+    historyList.appendChild(item);
+    historyList.scrollTop = historyList.scrollHeight;
+}
+
+// ─── WebSocket ────────────────────────────────────────────────
+
+let chatSocket = null;
+let currentFullResponse = '';
+let wsReconnectTimer = null;
+let isReconnecting = false;
+let isSending = false;
+
+export function initWebSocket() {
+    if (chatSocket && (
+        chatSocket.readyState === WebSocket.OPEN ||
+        chatSocket.readyState === WebSocket.CONNECTING
+    )) return;
+
+    isReconnecting = false;
+    chatSocket = new WebSocket(`${WS_BASE}/ws/chat`);
+
+    chatSocket.onopen = () => {
+        console.log('WebSocket bağlantısı başarılı.');
+        if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+    };
+
+    let currentAiBubble = null;
+
+    chatSocket.onmessage = async event => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'text') {
+            currentFullResponse += data.content;
+            const clean = currentFullResponse.trim();
+            if (clean) {
+                if (subtitle) subtitle.textContent = '';
+                if (!currentAiBubble) {
+                    currentAiBubble = document.createElement('div');
+                    currentAiBubble.className = 'history-item ai';
+                    const bubble = document.createElement('div');
+                    bubble.className = 'bubble';
+                    const img = document.createElement('img');
+                    img.src = './ela_avatar.png';
+                    img.alt = 'bot';
+                    img.className = 'avatar-icon';
+                    const content = document.createElement('div');
+                    content.className = 'content';
+                    bubble.appendChild(img);
+                    bubble.appendChild(content);
+                    currentAiBubble.appendChild(bubble);
+                    historyList.appendChild(currentAiBubble);
+                }
+                // textContent — XSS güvenli
+                currentAiBubble.querySelector('.content').textContent = clean;
+                historyList.scrollTop = historyList.scrollHeight;
+            }
+        } else if (data.type === 'audio') {
+            await playBase64Audio(data.content);
+        } else if (data.type === 'done') {
+            isSending = false;
+            chatHistory.push({ role: 'assistant', content: currentFullResponse });
+            if (!currentAiBubble && currentFullResponse.trim()) {
+                addToHistoryPanel('ai', currentFullResponse);
+            }
+            currentAiBubble = null;
+            currentFullResponse = '';
+        } else if (data.type === 'error') {
+            isSending = false;
+            if (subtitle) subtitle.textContent = 'Hata: ' + data.content;
+            addToHistoryPanel('ai', 'Hata: ' + data.content);
+        }
+    };
+
+    chatSocket.onclose = event => {
+        if (event.code === 1000 || isReconnecting) return;
+        isReconnecting = true;
+        console.warn(`WebSocket kapandı (code: ${event.code}). 3sn sonra yeniden bağlanılıyor...`);
+        wsReconnectTimer = setTimeout(initWebSocket, 3000);
+    };
+
+    chatSocket.onerror = err => console.error('WebSocket hatası:', err);
+}
+
+// ─── Mesaj gönderme ───────────────────────────────────────────
+
+export async function sendMessage() {
+    if (isSending) return;
+    const text = chatInput?.value.trim();
+    if (!text) return;
+
+    isSending = true;
+    stopAudio();
+    await initWebAudio();
+
+    chatHistory.push({ role: 'user', content: text });
+    addToHistoryPanel('user', text);
+    if (chatInput) chatInput.value = '';
+
+    if (subtitle) subtitle.textContent = translations[_currentLang].thinking;
+    currentFullResponse = '';
+
+    const payload = JSON.stringify({
+        text,
+        lang: _currentLang,
+        history: chatHistory.slice(0, -1).slice(-10),
+        session_id: SESSION_ID,
+    });
+
+    if (chatSocket?.readyState === WebSocket.OPEN) {
+        chatSocket.send(payload);
+    } else {
+        if (subtitle) subtitle.textContent = 'Bağlanıyor...';
+        initWebSocket();
+        const waitAndSend = setInterval(() => {
+            if (chatSocket?.readyState === WebSocket.OPEN) {
+                clearInterval(waitAndSend);
+                chatSocket.send(payload);
+            }
+        }, 200);
+        setTimeout(() => {
+            clearInterval(waitAndSend);
+            if (subtitle?.textContent === 'Bağlanıyor...') {
+                subtitle.textContent = 'Bağlantı sağlanamadı.';
+            }
+        }, 5000);
+    }
+}
