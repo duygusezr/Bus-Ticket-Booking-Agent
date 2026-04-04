@@ -9,7 +9,6 @@ from pydantic import BaseModel
 from config import settings
 from services.llm_service import generate_chat_response, generate_chat_response_stream
 from services.tts_service import generate_tts
-from services.semantic_cache_service import semantic_cache
 from services.preprocessing_service import preprocess_request
 
 logger = logging.getLogger(__name__)
@@ -35,11 +34,6 @@ async def chat_endpoint(request: ChatRequest):
         session_id = request.session_id
 
         processed_text = preprocess_request(request.text, request.history, lang, session_id)
-
-        cached = semantic_cache.search(processed_text)
-        if cached:
-            logger.info("REST cache HIT — %.3fs", time.perf_counter() - t0)
-            return {"text": cached["text"], "audio": cached["audio"], "emotion": cached["emotion"]}
 
         response_text = await generate_chat_response(processed_text, request.history, lang, session_id)
         t_llm = time.perf_counter()
@@ -85,15 +79,6 @@ async def websocket_chat(websocket: WebSocket):
             t0 = time.perf_counter()
             processed_text = preprocess_request(text, history, lang, session_id)
 
-            cached = semantic_cache.search(processed_text)
-            if cached:
-                await websocket.send_json({"type": "text", "content": cached["text"]})
-                await websocket.send_json({"type": "audio", "content": cached["audio"]})
-                await websocket.send_json({"type": "emotion", "content": cached["emotion"]})
-                await websocket.send_json({"type": "done"})
-                logger.info("WS cache HIT — %.3fs", time.perf_counter() - t0)
-                continue
-
             try:
                 full_response = ""
                 t_llm = time.perf_counter()
@@ -103,8 +88,7 @@ async def websocket_chat(websocket: WebSocket):
                 logger.info("WS LLM=%.3fs", time.perf_counter() - t_llm)
 
                 t_tts = time.perf_counter()
-                clean_text = full_response.strip()
-                audio_base64 = await generate_tts(clean_text, lang)
+                audio_base64 = await generate_tts(full_response.strip(), lang)
                 logger.info(
                     "WS TTS=%.3fs TOTAL=%.3fs",
                     time.perf_counter() - t_tts,

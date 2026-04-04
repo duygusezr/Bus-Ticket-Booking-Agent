@@ -13,9 +13,9 @@ import re
 import logging
 from typing import List, Dict, Optional
 
-from config import settings
 from services.tools import validate_seat_selection, validate_phone_number, validate_email_address
 from services.session_state import get_session, build_truth_injection
+from services.types import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +33,10 @@ def _last_assistant_text(history: List[Dict[str, str]]) -> str:
 
 # ─────────────────────────────────────────────
 # Deterministik kestirme doğrulayıcılar
+# Dönüş tipi Optional[ToolResult] — başarılı doğrulama veya None.
 # ─────────────────────────────────────────────
 
-def _try_seat_validation(text: str, history: List[Dict[str, str]]) -> Optional[str]:
+def _try_seat_validation(text: str, history: List[Dict[str, str]]) -> Optional[ToolResult]:
     """Asistan son mesajında koltuk listesi gösterdiyse ve kullanıcı kısa giriş
     yaptıysa, LLM'e gitmeden doğrudan validate_seat_selection çağırır."""
     user_text = (text or "").strip()
@@ -61,10 +62,11 @@ def _try_seat_validation(text: str, history: List[Dict[str, str]]) -> Optional[s
     if not re.fullmatch(r"[0-9]{1,2}|[a-zA-ZçğıöşüÇĞİÖŞÜ\s]{2,12}", user_text):
         return None
 
-    return validate_seat_selection(user_text, available_seats)
+    result = validate_seat_selection(user_text, available_seats)
+    return result if result.success else None
 
 
-def _try_phone_validation(text: str, history: List[Dict[str, str]]) -> Optional[str]:
+def _try_phone_validation(text: str, history: List[Dict[str, str]]) -> Optional[ToolResult]:
     """Asistan telefon istiyorsa ve girdi telefon formatına uyuyorsa doğrula."""
     user_text = (text or "").strip()
     if not user_text:
@@ -83,10 +85,11 @@ def _try_phone_validation(text: str, history: List[Dict[str, str]]) -> Optional[
         return None
 
     logger.debug("Doğrudan telefon doğrulama: %r → rakamlar=%r", user_text, clean)
-    return validate_phone_number(user_text)
+    result = validate_phone_number(user_text)
+    return result if result.success else None
 
 
-def _try_email_validation(text: str, history: List[Dict[str, str]]) -> Optional[str]:
+def _try_email_validation(text: str, history: List[Dict[str, str]]) -> Optional[ToolResult]:
     """Asistan e-posta istiyorsa ve giriş e-posta gibi görünüyorsa doğrula."""
     user_text = (text or "").strip()
     if not user_text:
@@ -107,7 +110,8 @@ def _try_email_validation(text: str, history: List[Dict[str, str]]) -> Optional[
         return None
 
     logger.debug("Doğrudan e-posta doğrulama: %r", user_text)
-    return validate_email_address(user_text)
+    result = validate_email_address(user_text)
+    return result if result.success else None
 
 
 # ─────────────────────────────────────────────
@@ -116,9 +120,9 @@ def _try_email_validation(text: str, history: List[Dict[str, str]]) -> Optional[
 
 def _build_validation_injection(
     lang: str,
-    seat_result: Optional[str],
-    phone_result: Optional[str],
-    email_result: Optional[str],
+    seat_result: Optional[ToolResult],
+    phone_result: Optional[ToolResult],
+    email_result: Optional[ToolResult],
     session_id: str,
 ) -> str:
     """Deterministik doğrulama sonuçlarını LLM'e sistem mesajı olarak enjekte et."""
@@ -127,13 +131,13 @@ def _build_validation_injection(
         sefer_id = session.sefer_id
         if lang == "en":
             base = (
-                f"[SYSTEM INFORMATION: Tool result: {email_result}. "
+                f"[SYSTEM INFORMATION: Tool result: {email_result.message}. "
                 "Provide a clear SUMMARY and ask 'Do you confirm?'. Do NOT book yet!"
             )
             suffix = f" Use Trip ID={sefer_id} for Step 9.]" if sefer_id else "]"
         else:
             base = (
-                f"[SİSTEM BİLGİSİ: Araç sonucu: {email_result}. "
+                f"[SİSTEM BİLGİSİ: Araç sonucu: {email_result.message}. "
                 "Kullanıcıya tüm bilgilerin ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Rezervasyon yapma!"
             )
             suffix = f" Onay sonrası sefer_id={sefer_id} kullanacaksın.]" if sefer_id else "]"
@@ -142,8 +146,8 @@ def _build_validation_injection(
     for result in (phone_result, seat_result):
         if result:
             if lang == "en":
-                return f" [SYSTEM INFORMATION: Tool result: {result}]"
-            return f" [SİSTEM BİLGİSİ: Araç sonucu: {result}]"
+                return f" [SYSTEM INFORMATION: Tool result: {result.message}]"
+            return f" [SİSTEM BİLGİSİ: Araç sonucu: {result.message}]"
 
     return ""
 
@@ -174,7 +178,7 @@ def preprocess_request(
     )
     processed = text + validation_injection
 
-    # Oturumdan doğrulanmış verileri enjekte et (regex kazıma yerine)
+    # Oturumdan doğrulanmış verileri enjekte et
     session = get_session(session_id)
     truth_injection = build_truth_injection(session)
     if truth_injection and truth_injection not in processed:

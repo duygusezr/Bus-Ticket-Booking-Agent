@@ -132,12 +132,16 @@ def test_email_already_valid():
 
 def test_validate_email_valid():
     result = validate_email_address("test@gmail.com")
-    assert "dogruland" in result.lower() or "doğrulandı" in result
+    assert isinstance(result, ToolResult)
+    assert result.success is True
+    assert "doğruland" in result.message.lower()
 
 
 def test_validate_email_invalid():
     result = validate_email_address("not-an-email")
-    assert "Hata" in result
+    assert isinstance(result, ToolResult)
+    assert result.success is False
+    assert "Hata" in result.message
 
 
 # ─────────────────────────────────────────────
@@ -149,17 +153,23 @@ from services.tools import validate_phone_number
 
 def test_phone_valid_11digit():
     result = validate_phone_number("05372791437")
-    assert "doğrulandı" in result
+    assert isinstance(result, ToolResult)
+    assert result.success is True
+    assert "doğrulandı" in result.message
 
 
 def test_phone_valid_10digit():
     result = validate_phone_number("5372791437")
-    assert "doğrulandı" in result
+    assert isinstance(result, ToolResult)
+    assert result.success is True
+    assert "doğrulandı" in result.message
 
 
 def test_phone_too_short():
     result = validate_phone_number("0537")
-    assert "Hata" in result
+    assert isinstance(result, ToolResult)
+    assert result.success is False
+    assert "Hata" in result.message
 
 
 # ─────────────────────────────────────────────
@@ -218,7 +228,7 @@ def test_pnr_uniqueness():
 # ToolResult tests
 # ─────────────────────────────────────────────
 
-from services.session_state import ToolResult
+from services.types import ToolResult
 
 
 def test_tool_result_str():
@@ -431,3 +441,126 @@ def test_vem_returns_tool_result_invalid():
     r = vem("not-an-email")
     assert isinstance(r, ToolResult)
     assert r.success is False
+
+
+# ─────────────────────────────────────────────
+# preprocessing_service tests
+# ─────────────────────────────────────────────
+
+from services.preprocessing_service import (
+    preprocess_request,
+    _try_seat_validation,
+    _try_phone_validation,
+    _try_email_validation,
+)
+
+
+def test_preprocess_appends_truth_injection():
+    """Dolu oturum varsa truth injection metne eklenmeli."""
+    sid = "test_preprocess_truth_p1"
+    clear_session(sid)
+    s = get_session(sid)
+    s.sefer_id = 10
+    s.departure = "Ankara"
+    s.destination = "Istanbul"
+    s.travel_date = "2025-08-01"
+
+    result = preprocess_request("Evet", [], "tr", sid)
+    assert "STRICT_ID=10" in result
+    assert "STRICT_ROUTE=Ankara -> Istanbul" in result
+    assert "STRICT_DATE=2025-08-01" in result
+    clear_session(sid)
+
+
+def test_preprocess_empty_session_no_injection():
+    """Boş oturum varsa truth injection eklenmemeli."""
+    sid = "test_preprocess_empty_p2"
+    clear_session(sid)
+    result = preprocess_request("Merhaba", [], "tr", sid)
+    assert "ABSOLUTE SYSTEM TRUTH" not in result
+    assert result.strip() == "Merhaba"
+    clear_session(sid)
+
+
+def test_preprocess_no_duplicate_injection():
+    """Aynı injection iki kez eklenmemeli."""
+    sid = "test_preprocess_dedup_p3"
+    clear_session(sid)
+    s = get_session(sid)
+    s.sefer_id = 5
+    s.departure = "Bursa"
+    s.destination = "Izmir"
+
+    result = preprocess_request("Tamam", [], "tr", sid)
+    count = result.count("ABSOLUTE SYSTEM TRUTH")
+    assert count == 1
+    clear_session(sid)
+
+
+def test_try_seat_validation_returns_tool_result():
+    """Geçerli koltuk girişi ToolResult döndürmeli."""
+    history = [
+        {"role": "assistant", "content": "Boş koltuklar: 3, 7, 12"}
+    ]
+    result = _try_seat_validation("7", history)
+    assert result is not None
+    assert isinstance(result, ToolResult)
+    assert result.success is True
+    assert result.data["seat"] == 7
+
+
+def test_try_seat_validation_no_seat_list():
+    """Asistan koltuk listesi göstermediyse None dönmeli."""
+    history = [{"role": "assistant", "content": "Merhaba, nasıl yardımcı olabilirim?"}]
+    result = _try_seat_validation("5", history)
+    assert result is None
+
+
+def test_try_seat_validation_invalid_seat():
+    """Listede olmayan koltuk seçilince None dönmeli (success=False ToolResult gizleniyor)."""
+    history = [
+        {"role": "assistant", "content": "Boş koltuklar: 3, 7, 12"}
+    ]
+    result = _try_seat_validation("99", history)
+    # Başarısız ToolResult None olarak dönütürülür (preprocessing_service filtreler)
+    assert result is None
+
+
+def test_try_phone_validation_context_match():
+    """Asistan telefon istiyorsa ve geçerli telefon girildiğinde ToolResult dönmeli."""
+    history = [{"role": "assistant", "content": "Telefon numaranızı girer misiniz? 05XX formatında"}]
+    result = _try_phone_validation("05371234567", history)
+    assert result is not None
+    assert isinstance(result, ToolResult)
+    assert result.success is True
+
+
+def test_try_phone_validation_wrong_context():
+    """Asistan telefon istemiyorsa None dönmeli."""
+    history = [{"role": "assistant", "content": "Ad soyadınızı söyler misiniz?"}]
+    result = _try_phone_validation("05371234567", history)
+    assert result is None
+
+
+def test_try_email_validation_context_match():
+    """Asistan e-posta istiyorsa ve geçerli e-posta girildiğinde ToolResult dönmeli."""
+    history = [{"role": "assistant", "content": "E-posta adresinizi alır mıyım?"}]
+    result = _try_email_validation("test@gmail.com", history)
+    assert result is not None
+    assert isinstance(result, ToolResult)
+    assert result.success is True
+    assert result.data["email"] == "test@gmail.com"
+
+
+def test_try_email_validation_wrong_context():
+    """Asistan e-posta istemiyorsa None dönmeli."""
+    history = [{"role": "assistant", "content": "Kalkış şehrinizi söyleyin."}]
+    result = _try_email_validation("test@gmail.com", history)
+    assert result is None
+
+
+def test_try_email_validation_no_email_pattern():
+    """Asistan e-posta istiyor ama girdi e-posta gibi görünmüyorsa None dönmeli."""
+    history = [{"role": "assistant", "content": "E-posta adresinizi alır mıyım?"}]
+    result = _try_email_validation("sadece bir cümle", history)
+    assert result is None

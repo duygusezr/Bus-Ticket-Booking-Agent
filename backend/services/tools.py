@@ -17,7 +17,7 @@ from services.number_utils import (
     UNIT_MAP,
     TEN_MAP,
 )
-from services.session_state import ToolResult
+from services.types import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -220,19 +220,30 @@ def _normalize_email_input(text: str) -> str:
             continue
 
         if tok == "yuz":
-            result_tokens.append("100"); i += 1; continue
+            result_tokens.append("100")
+            i += 1
+            continue
 
         if tok in TEN_MAP:
             if nxt in UNIT_MAP:
-                result_tokens.append(str(TEN_MAP[tok] + UNIT_MAP[nxt])); i += 2; continue
+                result_tokens.append(str(TEN_MAP[tok] + UNIT_MAP[nxt]))
+                i += 2
+                continue
             elif nxt.isdigit() and len(nxt) == 1:
-                result_tokens.append(str(TEN_MAP[tok] + int(nxt))); i += 2; continue
-            result_tokens.append(str(TEN_MAP[tok])); i += 1; continue
+                result_tokens.append(str(TEN_MAP[tok] + int(nxt)))
+                i += 2
+                continue
+            result_tokens.append(str(TEN_MAP[tok]))
+            i += 1
+            continue
 
         if tok in UNIT_MAP:
-            result_tokens.append(str(UNIT_MAP[tok])); i += 1; continue
+            result_tokens.append(str(UNIT_MAP[tok]))
+            i += 1
+            continue
 
-        result_tokens.append(tok); i += 1
+        result_tokens.append(tok)
+        i += 1
 
     t = " ".join(result_tokens)
     t = re.sub(r"\b(at|et)\b", "@", t)
@@ -309,17 +320,21 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optio
             if exact:
                 lines = [f"{travel_date} tarihinde {departure_city} → {destination_city} için seferler:"]
                 first_id = None
+                all_ids: list[int] = []
                 for row, _ in exact[:3]:
                     if first_id is None:
                         first_id = row["id"]
+                    all_ids.append(row["id"])
                     lines.append(
                         f"- Sefer_ID: {row['id']}, Tarih: {row['travel_datetime']}, "
                         f"Tip: {row['bus_type']}, Fiyat: {row['price']} TL, Boş Koltuklar: {row['available_seats']}"
                     )
+                # sefer_ids: tüm sefer ID'leri (kullanıcı koltuk seçince LLM doğru ID'yi belirler)
+                # sefer_id: geriye dönük uyumluluk için ilk ID
                 return ToolResult(
                     message="\n".join(lines),
                     success=True,
-                    data={"sefer_id": first_id},
+                    data={"sefer_ids": all_ids, "sefer_id": first_id},
                 )
 
             close = [(r, dt) for r, dt in future_rows if abs((dt - target_dt).days) <= 3]

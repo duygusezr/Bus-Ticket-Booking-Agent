@@ -8,7 +8,8 @@ from google.genai import types
 
 from config import settings
 from services.memory_service import get_current_summary, update_memory
-from services.session_state import update_session_from_tool_result, ToolResult
+from services.session_state import update_session_from_tool_result
+from services.types import ToolResult
 
 logger = logging.getLogger(__name__)
 

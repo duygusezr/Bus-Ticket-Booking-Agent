@@ -3,36 +3,15 @@ services/session_state.py
 ─────────────────────────
 Onaylanan rezervasyon verilerini sunucu tarafında saklayan hafif session yönetimi.
 
-Araçlar artık ToolResult dataclass'ı döndürür; bu sayede session_state
+Araçlar ToolResult (services/types.py) döndürür; bu sayede session_state
 araç çıktısını string üzerinden regex ile değil, doğrudan data alanından okur.
 """
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Any
+from dataclasses import dataclass
+from typing import Dict, Optional
 
-
-# ─────────────────────────────────────────────
-# Araç dönüş tipi
-# ─────────────────────────────────────────────
-
-@dataclass
-class ToolResult:
-    """
-    Tüm LLM araçlarının döndürdüğü yapılandırılmış sonuç.
-
-    message : LLM'e ve kullanıcıya gösterilecek insan okunabilir metin.
-    success : İşlem başarılı mıydı?
-    data    : session_state'in regex olmadan okuyacağı anahtar-değer verisi.
-    """
-    message: str
-    success: bool = True
-    data: Dict[str, Any] = field(default_factory=dict)
-
-    def __str__(self) -> str:
-        """Gemini araç döngüsü string bekler; message'ı döndür."""
-        return self.message
+from services.types import ToolResult  # noqa: F401 — dışarıdan erişim için re-export
 
 
 # ─────────────────────────────────────────────
@@ -110,14 +89,11 @@ def update_session_from_tool_result(
             session.validated_email = d["email"]
 
     elif tool_name == "make_reservation":
+        # Yolcu adını rezervasyon temizlenmeden önce kaydet
+        if "yolcu_ad_soyad" in tool_args:
+            session.passenger_name = tool_args["yolcu_ad_soyad"]
         if "pnr" in d:
             clear_session(session_id)
-
-    # make_reservation argümanlarından yolcu adını kaydet
-    if tool_name == "make_reservation" and "yolcu_ad_soyad" in tool_args:
-        # Oturum temizlenmeden önce adı okuyabiliriz ama oturum zaten silindi;
-        # bu alan bilgi amaçlıdır, kritik değil.
-        pass
 
 
 def build_truth_injection(session: BookingSession) -> str:
