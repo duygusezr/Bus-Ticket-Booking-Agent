@@ -394,8 +394,6 @@ function updateEyeMovement(elapsed, delta) {
 function setEmotion(emotion) {
     for (const key in expressionTargets) expressionTargets[key] = 0;
     expressionTargets.neutral = 1.0;
-    if (emotionBadge) emotionBadge.textContent = 'Nötr';
-    updateEmotionChart();
 }
 
 // ============================================================
@@ -439,10 +437,6 @@ const historyList = document.getElementById('history-list');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar');
 const closeSidebarBtn = document.getElementById('close-sidebar');
 
-const emotionSidebar = document.getElementById('emotion-sidebar');
-const toggleEmotionBtn = document.getElementById('toggle-emotion-sidebar');
-const closeEmotionBtn = document.getElementById('close-emotion-sidebar');
-const emotionBadge = document.getElementById('current-emotion-badge');
 
 // ============================================================
 // BACKEND URL KONFİGÜRASYONU
@@ -541,62 +535,8 @@ initWebSocket();
 toggleSidebarBtn.onclick = () => { historySidebar.classList.add('open'); emotionSidebar.classList.remove('open'); };
 closeSidebarBtn.onclick = () => { historySidebar.classList.remove('open'); };
 
-// Sidebar Toggle (Sağ)
-toggleEmotionBtn.onclick = () => { emotionSidebar.classList.add('open'); historySidebar.classList.remove('open'); initEmotionChart(); };
-closeEmotionBtn.onclick = () => { emotionSidebar.classList.remove('open'); };
 
-// ============================================================
-// DUYGU GRAFİĞİ (Chart.js)
-// ============================================================
-let emotionChart = null;
-function initEmotionChart() {
-    if (emotionChart) return;
-    const ctx = document.getElementById('emotionChart').getContext('2d');
-    emotionChart = new Chart(ctx, {
-        type: 'radar',
-        data: {
-            labels: ['Mutlu', 'Kızgın', 'Üzgün', 'Sakin', 'Şaşkın', 'Düşünceli', 'Meraklı'],
-            datasets: [{
-                label: 'Duygu Yoğunluğu',
-                data: [0, 0, 0, 1, 0, 0, 0],
-                backgroundColor: 'rgba(255, 192, 203, 0.2)',
-                borderColor: 'rgba(255, 192, 203, 0.8)',
-                borderWidth: 2,
-                pointBackgroundColor: 'rgba(255, 192, 203, 1)',
-                tension: 0.4
-            }]
-        },
-        options: {
-            scales: {
-                r: {
-                    min: 0, max: 1,
-                    ticks: { display: false },
-                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
-                    angleLines: { color: 'rgba(255, 255, 255, 0.1)' },
-                    pointLabels: { color: 'rgba(255, 255, 255, 0.5)', font: { size: 10 } }
-                }
-            },
-            plugins: { legend: { display: false } },
-            responsive: true,
-            maintainAspectRatio: true
-        }
-    });
-}
 
-function updateEmotionChart() {
-    if (!emotionChart) return;
-    const data = [
-        expressionTargets.happy,
-        expressionTargets.angry,
-        expressionTargets.sad,
-        expressionTargets.relaxed,
-        expressionTargets.surprised,
-        expressionTargets.think,
-        expressionTargets.curious || expressionTargets.question
-    ];
-    emotionChart.data.datasets[0].data = data;
-    emotionChart.update('none');
-}
 
 // ============================================================
 // GEÇMİŞE MESAJ EKLE
