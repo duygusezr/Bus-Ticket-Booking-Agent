@@ -18,7 +18,6 @@ from routers.chat import router as chat_router
 from routers.stt import router as stt_router
 from routers.tts import router as tts_router
 
-# Root logger: INFO to stdout, WARNING+ to stderr
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -29,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Initialize DB at startup — not at import time
+    from services.tools import init_db
     from services.llm_service import GEMINI_MODEL
+    init_db()
     logger.info("Gemini model: %s", GEMINI_MODEL)
     logger.info("CORS origins: %s", settings.CORS_ORIGINS)
     yield

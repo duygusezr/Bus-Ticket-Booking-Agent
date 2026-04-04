@@ -4,12 +4,13 @@ import csv
 import random
 import string
 import re
+import hashlib
 from contextlib import contextmanager
 from typing import Optional
 from datetime import datetime
 from pathlib import Path
 
-from services.number_utils import extract_digit_stream, normalize_phone_digits, normalize_text, tokenize_numeric
+from services.number_utils import extract_digit_stream, normalize_phone_digits, normalize_text, UNIT_MAP, TEN_MAP
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "database" / "bilet_sistemi.db"
@@ -37,6 +38,7 @@ def _db(path: Path):
 
 
 def init_db() -> None:
+    """Initialize both databases. Called once at application startup via lifespan."""
     with _db(DB_PATH) as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS seferler (
@@ -60,36 +62,43 @@ def init_db() -> None:
                 ]
             conn.executemany(
                 'INSERT INTO seferler (departure_city, destination_city, bus_plate, travel_datetime, price, bus_type, available_seats) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                records
+                records,
             )
 
     with _db(REZ_DB_PATH) as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS rezervasyonlar (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                pnr_code TEXT,
+                pnr_code TEXT UNIQUE NOT NULL,
                 sefer_id INTEGER,
                 passenger_full_name TEXT,
-                tc_identity_no TEXT,
-                phone_number TEXT,
+                tc_identity_hash TEXT,
+                phone_hash TEXT,
                 email_address TEXT,
                 seat_number TEXT,
                 transaction_datetime TEXT,
                 reservation_status TEXT
             )
         ''')
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_pnr_unique ON rezervasyonlar(pnr_code)"
+        )
         if conn.execute("SELECT COUNT(*) FROM rezervasyonlar").fetchone()[0] == 0 and REZ_CSV_PATH.exists():
             print(f"[TOOLS] Loading reservations from {REZ_CSV_PATH}...")
             with open(REZ_CSV_PATH, 'r', encoding='utf-8') as f:
                 records = [
                     (r['pnr_code'], int(r['sefer_id']), r['passenger_full_name'],
-                     r['tc_identity_no'], r['phone_number'], r['email_address'],
-                     r['seat_number'], r['transaction_datetime'], r['reservation_status'])
+                     r.get('tc_identity_hash', ''), r.get('phone_hash', ''),
+                     r['email_address'], r['seat_number'],
+                     r['transaction_datetime'], r['reservation_status'])
                     for r in csv.DictReader(f)
                 ]
             conn.executemany(
-                'INSERT INTO rezervasyonlar (pnr_code, sefer_id, passenger_full_name, tc_identity_no, phone_number, email_address, seat_number, transaction_datetime, reservation_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                records
+                '''INSERT OR IGNORE INTO rezervasyonlar
+                   (pnr_code, sefer_id, passenger_full_name, tc_identity_hash, phone_hash,
+                    email_address, seat_number, transaction_datetime, reservation_status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                records,
             )
 
 
@@ -105,7 +114,22 @@ def _sync_csv(conn: sqlite3.Connection, table: str, path: Path, headers: list[st
         print(f"[TOOLS] CSV sync error ({path}): {e}")
 
 
-init_db()
+def _hash_pii(value: str) -> str:
+    """One-way SHA-256 hash for PII fields (TC, phone). NOT reversible."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _generate_unique_pnr(conn: sqlite3.Connection, table: str = "rez.rezervasyonlar", length: int = 8) -> str:
+    """Generate a PNR code guaranteed unique in the given table (supports attached DB alias)."""
+    charset = string.ascii_uppercase + string.digits
+    for _ in range(20):
+        pnr = ''.join(random.choices(charset, k=length))
+        exists = conn.execute(
+            f"SELECT 1 FROM {table} WHERE pnr_code = ?", (pnr,)
+        ).fetchone()
+        if not exists:
+            return pnr
+    raise RuntimeError("PNR generation failed after 20 attempts.")
 
 
 # ─────────────────────────────────────────────
@@ -131,7 +155,6 @@ def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
         return False, "T.C. Kimlik numarası tam olarak 11 rakamdan oluşmalıdır."
 
     if len(stream) > 11:
-        # Sliding window: find valid 11-digit sequence
         for i in range(len(stream) - 10):
             cand = stream[i:i + 11]
             if _tc_checksum_ok(cand):
@@ -149,7 +172,9 @@ def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
     tenth = ((odd_sum * 7) - even_sum) % 10
     eleventh = sum(d[:10]) % 10
 
-    print(f"[TC_LOG] Input={stream} Odd={odd_sum} Even={even_sum} Exp10={tenth} Exp11={eleventh} Valid={d[9]==tenth and d[10]==eleventh}")
+    # Log only a masked version — never log raw TC numbers
+    masked = stream[:3] + "*" * 5 + stream[-3:]
+    print(f"[TC_LOG] Input={masked} Valid={d[9]==tenth and d[10]==eleventh}")
 
     if d[10] % 2 != 0:
         return False, "T.C. Kimlik numarası çift sayı ile bitmelidir."
@@ -177,10 +202,13 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optio
         norm_dest = normalize_city(destination_city)
         today = datetime.now().date()
 
+        # SQL-level filter to avoid full table scan; Python filter handles Turkish char normalization
         with _db(DB_PATH) as conn:
-            rows = conn.execute("SELECT * FROM seferler").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM seferler WHERE LOWER(departure_city) LIKE ? AND LOWER(destination_city) LIKE ?",
+                (f"%{norm_dep}%", f"%{norm_dest}%"),
+            ).fetchall()
 
-        # Filter by route (Python-side to use normalization)
         matched = [
             r for r in rows
             if norm_dep in normalize_city(r['departure_city'])
@@ -217,7 +245,6 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optio
                     )
                 return "\n".join(result)
 
-            # Suggest nearby dates (±3 days first, then nearest 3)
             close = [(r, dt) for r, dt in future_rows if abs((dt - target_dt).days) <= 3]
             candidates = sorted(close or future_rows, key=lambda x: abs((x[1] - target_dt).days))
             msg = (
@@ -252,7 +279,6 @@ def validate_seat_selection(user_input: str, available_seats_str: str) -> str:
     """Check if a seat number (word or digit) is in the available seats list."""
     text = normalize_text(str(user_input))
 
-    # Word-to-number for seat selection (small numbers only)
     word_seat_map = {
         "bir": 1, "iki": 2, "uc": 3, "dort": 4, "bes": 5, "alti": 6,
         "yedi": 7, "sekiz": 8, "dokuz": 9, "on": 10, "onbir": 11, "on bir": 11,
@@ -284,7 +310,7 @@ def validate_seat_selection(user_input: str, available_seats_str: str) -> str:
     except Exception:
         return f"Hata: Koltuk listesi okunamadı: {available_seats_str}"
 
-    print(f"[SEAT_LOG] Input={user_input!r} Extracted={extracted} Available={valid_seats}")
+    print(f"[SEAT_LOG] Extracted={extracted} Available={valid_seats}")
 
     if extracted in valid_seats:
         return f"Koltuk {extracted} uygun. Devam etmek istiyor musunuz?"
@@ -301,7 +327,6 @@ def validate_phone_number(phone: str) -> str:
     """Normalize and validate a Turkish phone number."""
     phone = str(phone).strip()
     normalized = normalize_phone_digits(phone)
-    print(f"[PHONE_VAL] Raw={phone!r} Normalized={normalized!r}")
 
     if not normalized.isdigit() or len(normalized) not in (10, 11):
         digit_count = len(normalized) if normalized.isdigit() else 0
@@ -320,8 +345,6 @@ def _normalize_email_input(text: str) -> str:
     """Normalize a voice-dictated email address into standard format."""
     t = normalize_text(text)
 
-    # Convert number words within email to digits
-    from services.number_utils import UNIT_MAP, TEN_MAP
     tokens = t.split()
     result_tokens: list[str] = []
     i = 0
@@ -356,28 +379,20 @@ def _normalize_email_input(text: str) -> str:
 
     t = " ".join(result_tokens)
 
-    # @ symbol substitutions
     t = re.sub(r"\b(at|et)\b", "@", t)
-    # Dot substitutions
     t = re.sub(r"\b(nokta|dot)\b", ".", t)
-    # Common STT misreadings for email domains
     t = re.sub(r"\bci\s*m[ae]il\b", "gmail", t)
     t = re.sub(r"\bcimail\b", "gmail", t)
     t = re.sub(r"\bg\s+mail\b", "gmail", t)
     t = re.sub(r"\bhot\s*mail\b", "hotmail", t)
     t = re.sub(r"\byahu\b", "yahoo", t)
     t = re.sub(r"\bout\s*look\b", "outlook", t)
-    # Domain+TLD merging
     t = re.sub(r"\b(gmail|hotmail|yahoo|outlook|icloud|yandex)\s+(com|net|org|tr)\b", r"\1.\2", t)
     t = re.sub(r"\bcom\s+tr\b", "com.tr", t)
-    # Special chars
     t = re.sub(r"\b(alt\s*cizgi|alt\s*tire|underscore)\b", "_", t)
     t = re.sub(r"\btire\b", "-", t)
-    # Remove all whitespace
     t = re.sub(r"\s+", "", t)
-    # Strip trailing punctuation (STT adds sentence-ending periods)
     t = t.rstrip(".,;:!?")
-    # Deduplicate if STT doubled the email
     if t.count("@") == 2 and len(t) % 2 == 0:
         half = len(t) // 2
         if t[:half] == t[half:]:
@@ -389,21 +404,38 @@ def _normalize_email_input(text: str) -> str:
 def validate_email_address(email: str) -> str:
     """Normalize and validate an email address (supports voice input)."""
     normalized = _normalize_email_input(email)
-    print(f"[EMAIL_LOG] Input={email!r} Normalized={normalized!r}")
+    print(f"[EMAIL_LOG] Normalized={normalized!r}")
 
     if re.fullmatch(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", normalized):
         return f"E-posta doğrulandı: {normalized}"
     return f"Hata: E-posta doğrulanamadı. Algılanan: '{normalized}'. Örnek format: adsoyad@gmail.com"
 
 
-def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: str, eposta: str, koltuk_no: str) -> str:
-    """Reserve a bus seat. Validates TC, removes seat from available pool, records reservation, returns PNR."""
+def make_reservation(
+    sefer_id: int,
+    yolcu_ad_soyad: str,
+    tc_no: str,
+    telefon: str,
+    eposta: str,
+    koltuk_no: str,
+) -> str:
+    """
+    Reserve a bus seat atomically across both databases using ATTACH DATABASE.
+    TC and phone are hashed (SHA-256) before storage — never stored plaintext.
+    Both the seat update and the reservation insert are committed in a single transaction.
+    """
     try:
         is_valid, msg = validate_tc_kimlik(tc_no)
         if not is_valid:
             return f"Rezervasyon yapılamadı: {msg}"
 
+        tc_hash = _hash_pii(tc_no)
+        phone_hash = _hash_pii(telefon)
+
+        # ATTACH DATABASE lets us write to both DB files in one atomic transaction.
         with _db(DB_PATH) as conn:
+            conn.execute(f"ATTACH DATABASE '{REZ_DB_PATH}' AS rez")
+
             row = conn.execute("SELECT * FROM seferler WHERE id = ?", (sefer_id,)).fetchone()
             if not row:
                 return f"Hata: Sefer ID {sefer_id} bulunamadı."
@@ -416,24 +448,27 @@ def make_reservation(sefer_id: int, yolcu_ad_soyad: str, tc_no: str, telefon: st
             new_seats = ",".join(seats)
             conn.execute("UPDATE seferler SET available_seats = ? WHERE id = ?", (new_seats, sefer_id))
 
+            pnr_code = _generate_unique_pnr(conn, table="rez.rezervasyonlar")
+            transaction_time = datetime.now().strftime("%m/%d/%Y")
+
+            conn.execute(
+                '''INSERT INTO rez.rezervasyonlar
+                   (pnr_code, sefer_id, passenger_full_name, tc_identity_hash, phone_hash,
+                    email_address, seat_number, transaction_datetime, reservation_status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                (pnr_code, sefer_id, yolcu_ad_soyad, tc_hash, phone_hash,
+                 eposta, koltuk_no, transaction_time, "completed"),
+            )
+
             _sync_csv(
                 conn, "seferler", CSV_PATH,
-                ['id', 'departure_city', 'destination_city', 'bus_plate', 'travel_datetime', 'price', 'bus_type', 'available_seats']
-            )
-
-        pnr_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        transaction_time = datetime.now().strftime("%m/%d/%Y")
-
-        with _db(REZ_DB_PATH) as conn:
-            conn.execute(
-                '''INSERT INTO rezervasyonlar
-                   (pnr_code, sefer_id, passenger_full_name, tc_identity_no, phone_number, email_address, seat_number, transaction_datetime, reservation_status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                (pnr_code, sefer_id, yolcu_ad_soyad, tc_no, telefon, eposta, koltuk_no, transaction_time, "completed")
+                ['id', 'departure_city', 'destination_city', 'bus_plate',
+                 'travel_datetime', 'price', 'bus_type', 'available_seats'],
             )
             _sync_csv(
-                conn, "rezervasyonlar", REZ_CSV_PATH,
-                ['id', 'pnr_code', 'sefer_id', 'passenger_full_name', 'tc_identity_no', 'phone_number', 'email_address', 'seat_number', 'transaction_datetime', 'reservation_status']
+                conn, "rez.rezervasyonlar", REZ_CSV_PATH,
+                ['id', 'pnr_code', 'sefer_id', 'passenger_full_name', 'tc_identity_hash',
+                 'phone_hash', 'email_address', 'seat_number', 'transaction_datetime', 'reservation_status'],
             )
 
         print(f"[DB_SUCCESS] PNR={pnr_code} Sefer={sefer_id} Yolcu={yolcu_ad_soyad}")

@@ -9,13 +9,16 @@ from services.memory_service import get_current_summary, update_memory
 
 GEMINI_MODEL = settings.GEMINI_CHAT_MODEL
 
+# Singleton client — created once at module load, reused across all requests
+_GEMINI_CLIENT = genai.Client(api_key=settings.GOOGLE_API_KEY)
+
 _TOOL_NAMES = [
     "get_bus_trips", "make_reservation", "validate_seat_selection",
     "validate_tc_number", "validate_phone_number", "validate_email_address",
 ]
 
 
-def _get_tools():
+def _get_tools() -> dict:
     from services.tools import (
         get_bus_trips, make_reservation, validate_seat_selection,
         validate_tc_number, validate_phone_number, validate_email_address,
@@ -79,8 +82,7 @@ async def generate_chat_response(
         summary = get_current_summary(session_id)
         system_prompt = _build_system_prompt(lang, summary)
 
-        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-        chat = client.aio.chats.create(
+        chat = _GEMINI_CLIENT.aio.chats.create(
             model=GEMINI_MODEL,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,

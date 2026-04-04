@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -80,30 +81,40 @@ Every message must start with this token format:
 """
 
 
-def _parse_int(val: str, default: int) -> int:
+def _parse_int(val: str | None, default: int) -> int:
     try:
-        return int(val)
+        return int(val)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return default
 
 
-def _parse_list(val: str) -> list[str]:
+def _parse_list(val: str | None) -> list[str]:
     return [v.strip() for v in (val or "*").split(",") if v.strip()]
 
 
+@dataclass
 class Settings:
-    SYSTEM_PROMPT: str = SYSTEM_PROMPT
-    SYSTEM_PROMPT_EN: str = SYSTEM_PROMPT_EN
-    DEFAULT_LANG: str = os.getenv("DEFAULT_LANG", "tr")
-    PORT: int = _parse_int(os.getenv("PORT"), 8001)
-    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
-    GEMINI_CHAT_MODEL: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
-    CORS_ORIGINS: list[str] = _parse_list(os.getenv("CORS_ORIGINS", "*"))
+    SYSTEM_PROMPT: str = field(default=SYSTEM_PROMPT)
+    SYSTEM_PROMPT_EN: str = field(default=SYSTEM_PROMPT_EN)
+    DEFAULT_LANG: str = field(default_factory=lambda: os.getenv("DEFAULT_LANG", "tr"))
+    PORT: int = field(default_factory=lambda: _parse_int(os.getenv("PORT"), 8001))
+    GOOGLE_API_KEY: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
+    GEMINI_CHAT_MODEL: str = field(default_factory=lambda: os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash"))
+    CORS_ORIGINS: list[str] = field(default_factory=lambda: _parse_list(os.getenv("CORS_ORIGINS", "*")))
 
     def __post_init__(self) -> None:
+        import warnings
         if not self.GOOGLE_API_KEY:
-            import warnings
-            warnings.warn("GOOGLE_API_KEY is not set. LLM calls will fail.", stacklevel=2)
+            warnings.warn(
+                "GOOGLE_API_KEY is not set. All LLM/STT calls will fail.",
+                stacklevel=2,
+            )
+        if self.CORS_ORIGINS == ["*"]:
+            warnings.warn(
+                "CORS_ORIGINS is set to '*' which allows all origins. "
+                "Set a specific origin in production via CORS_ORIGINS env var.",
+                stacklevel=2,
+            )
 
 
 settings = Settings()
