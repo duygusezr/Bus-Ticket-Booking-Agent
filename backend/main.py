@@ -6,7 +6,10 @@ from contextlib import asynccontextmanager
 # Suppress noisy third-party loggers before any imports
 logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
 logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
-warnings.filterwarnings("ignore", category=UserWarning)
+# Sadece gürültülü üçüncü taraf kütüphanelerinin UserWarning'lerini sustur
+warnings.filterwarnings("ignore", category=UserWarning, module="huggingface_hub")
+warnings.filterwarnings("ignore", category=UserWarning, module="sentence_transformers")
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

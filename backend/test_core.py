@@ -212,3 +212,222 @@ def test_pnr_uniqueness():
         assert pnr not in seen
         seen.add(pnr)
     conn.close()
+
+
+# ─────────────────────────────────────────────
+# ToolResult tests
+# ─────────────────────────────────────────────
+
+from services.session_state import ToolResult
+
+
+def test_tool_result_str():
+    """ToolResult.__str__ Gemini'ye gönderilecek mesajı döndürmeli."""
+    r = ToolResult(message="Koltuk 5 uygun.", success=True, data={"seat": 5})
+    assert str(r) == "Koltuk 5 uygun."
+
+
+def test_tool_result_failure_has_no_data():
+    r = ToolResult(message="Hata: geçersiz", success=False)
+    assert r.success is False
+    assert r.data == {}
+
+
+# ─────────────────────────────────────────────
+# session_state tests
+# ─────────────────────────────────────────────
+
+from services.session_state import (
+    get_session, clear_session, update_session_from_tool_result, build_truth_injection
+)
+
+
+def test_session_get_creates_new():
+    sid = "test_new_session_x1"
+    clear_session(sid)
+    s = get_session(sid)
+    assert s.sefer_id is None
+    assert s.seat is None
+    clear_session(sid)
+
+
+def test_session_clear():
+    sid = "test_clear_x2"
+    s = get_session(sid)
+    s.sefer_id = 99
+    clear_session(sid)
+    s2 = get_session(sid)
+    assert s2.sefer_id is None
+    clear_session(sid)
+
+
+def test_update_session_seat():
+    sid = "test_seat_x3"
+    clear_session(sid)
+    result = ToolResult(message="Koltuk 7 uygun.", success=True, data={"seat": 7})
+    update_session_from_tool_result(sid, "validate_seat_selection", {}, result)
+    assert get_session(sid).seat == "7"
+    clear_session(sid)
+
+
+def test_update_session_phone():
+    sid = "test_phone_x4"
+    clear_session(sid)
+    result = ToolResult(
+        message="Telefon doğrulandı: 0537 123 45 67",
+        success=True,
+        data={"formatted": "0537 123 45 67"},
+    )
+    update_session_from_tool_result(sid, "validate_phone_number", {}, result)
+    assert get_session(sid).validated_phone == "0537 123 45 67"
+    clear_session(sid)
+
+
+def test_update_session_email():
+    sid = "test_email_x5"
+    clear_session(sid)
+    result = ToolResult(
+        message="E-posta doğrulandı: test@gmail.com",
+        success=True,
+        data={"email": "test@gmail.com"},
+    )
+    update_session_from_tool_result(sid, "validate_email_address", {}, result)
+    assert get_session(sid).validated_email == "test@gmail.com"
+    clear_session(sid)
+
+
+def test_update_session_tc_verified():
+    sid = "test_tc_x6"
+    clear_session(sid)
+    result = ToolResult(message="T.C. doğrulandı.", success=True)
+    update_session_from_tool_result(sid, "validate_tc_number", {}, result)
+    assert get_session(sid).tc_verified is True
+    clear_session(sid)
+
+
+def test_update_session_failure_ignored():
+    """Başarısız araç sonucu oturum güncellememelidir."""
+    sid = "test_fail_x7"
+    clear_session(sid)
+    result = ToolResult(message="Hata", success=False)
+    update_session_from_tool_result(sid, "validate_seat_selection", {}, result)
+    assert get_session(sid).seat is None
+    clear_session(sid)
+
+
+def test_update_session_get_bus_trips():
+    sid = "test_trips_x8"
+    clear_session(sid)
+    args = {"departure_city": "Ankara", "destination_city": "Istanbul", "travel_date": "2025-06-01"}
+    result = ToolResult(message="Seferler:", success=True, data={"sefer_id": 42})
+    update_session_from_tool_result(sid, "get_bus_trips", args, result)
+    s = get_session(sid)
+    assert s.departure == "Ankara"
+    assert s.destination == "Istanbul"
+    assert s.travel_date == "2025-06-01"
+    assert s.sefer_id == 42
+    clear_session(sid)
+
+
+def test_make_reservation_clears_session():
+    sid = "test_pnr_clear_x9"
+    s = get_session(sid)
+    s.sefer_id = 1
+    s.seat = "5"
+    result = ToolResult(message="Başarılı! PNR Kodu: ABC12345", success=True, data={"pnr": "ABC12345"})
+    update_session_from_tool_result(sid, "make_reservation", {}, result)
+    # Oturum temizlenmiş olmali
+    fresh = get_session(sid)
+    assert fresh.sefer_id is None
+    clear_session(sid)
+
+
+def test_build_truth_injection_empty():
+    sid = "test_truth_empty_x10"
+    clear_session(sid)
+    assert build_truth_injection(get_session(sid)) == ""
+    clear_session(sid)
+
+
+def test_build_truth_injection_full():
+    sid = "test_truth_full_x11"
+    clear_session(sid)
+    s = get_session(sid)
+    s.sefer_id = 7
+    s.departure = "Bursa"
+    s.destination = "Istanbul"
+    s.travel_date = "2025-07-15"
+    s.seat = "12"
+    s.validated_phone = "0537 123 45 67"
+    s.validated_email = "ali@gmail.com"
+    injection = build_truth_injection(s)
+    assert "STRICT_ID=7" in injection
+    assert "STRICT_ROUTE=Bursa -> Istanbul" in injection
+    assert "STRICT_DATE=2025-07-15" in injection
+    assert "STRICT_SEAT=12" in injection
+    assert "STRICT_PHONE=0537 123 45 67" in injection
+    assert "STRICT_EMAIL=ali@gmail.com" in injection
+    clear_session(sid)
+
+
+# ─────────────────────────────────────────────
+# ToolResult döndüren araç testleri
+# ─────────────────────────────────────────────
+
+from services.tools import (
+    validate_seat_selection as vss,
+    validate_tc_number as vtc,
+    validate_phone_number as vpn,
+    validate_email_address as vem,
+)
+
+
+def test_vss_returns_tool_result_success():
+    r = vss("5", "3, 5, 7, 10")
+    assert isinstance(r, ToolResult)
+    assert r.success is True
+    assert r.data["seat"] == 5
+
+
+def test_vss_returns_tool_result_failure():
+    r = vss("99", "3, 5, 7")
+    assert isinstance(r, ToolResult)
+    assert r.success is False
+
+
+def test_vtc_returns_tool_result_valid():
+    r = vtc("10000000146")
+    assert isinstance(r, ToolResult)
+    assert r.success is True
+
+
+def test_vtc_returns_tool_result_invalid():
+    r = vtc("12345")
+    assert isinstance(r, ToolResult)
+    assert r.success is False
+
+
+def test_vpn_returns_tool_result_valid():
+    r = vpn("05371234567")
+    assert isinstance(r, ToolResult)
+    assert r.success is True
+    assert "formatted" in r.data
+
+
+def test_vpn_returns_tool_result_invalid():
+    r = vpn("123")
+    assert isinstance(r, ToolResult)
+    assert r.success is False
+
+
+def test_vem_returns_tool_result_valid():
+    r = vem("test@gmail.com")
+    assert isinstance(r, ToolResult)
+    assert r.success is True
+    assert r.data["email"] == "test@gmail.com"
+
+
+def test_vem_returns_tool_result_invalid():
+    r = vem("not-an-email")
+    assert isinstance(r, ToolResult)
+    assert r.success is False

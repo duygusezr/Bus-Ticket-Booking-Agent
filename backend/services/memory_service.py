@@ -7,6 +7,9 @@ from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
+# Singleton istemci — llm_service ile aynı pattern, her özetlemede yeni nesne üretilmez.
+_GEMINI_CLIENT = genai.Client(api_key=settings.GOOGLE_API_KEY)
+
 _sessions: Dict[str, dict] = {}
 _SUMMARIZE_EVERY = 5
 _MIN_INPUT_LEN = 5
@@ -42,7 +45,6 @@ async def _summarize(session: dict, session_id: str) -> None:
     session["buffer"] = []
 
     try:
-        client = genai.Client(api_key=settings.GOOGLE_API_KEY)
         buffer_text = "\n".join(
             f"Kullanıcı: {m['user']}\nELA: {m['ai']}" for m in buffer_snapshot
         )
@@ -57,7 +59,7 @@ async def _summarize(session: dict, session_id: str) -> None:
             "Never substitute placeholder examples for real data."
         )
 
-        response = await client.aio.models.generate_content(
+        response = await _GEMINI_CLIENT.aio.models.generate_content(
             model=settings.GEMINI_CHAT_MODEL,
             contents=prompt,
         )

@@ -8,7 +8,7 @@ from google.genai import types
 
 from config import settings
 from services.memory_service import get_current_summary, update_memory
-from services.session_state import update_session_from_tool_result
+from services.session_state import update_session_from_tool_result, ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -120,23 +120,23 @@ async def generate_chat_response(
                     continue
 
                 try:
-                    result = tools_map[fn.name](**fn.args)
+                    result: ToolResult = tools_map[fn.name](**fn.args)
                 except Exception as tool_err:
-                    result = f"Hata: {tool_err}"
+                    result = ToolResult(message=f"Hata: {tool_err}", success=False)
 
-                logger.info("Araç sonucu [%s]: %s", fn.name, result)
+                logger.info("Araç sonucu [%s]: %s", fn.name, result.message)
 
                 # Oturum durumunu araç sonucuna göre güncelle
                 update_session_from_tool_result(
                     session_id=session_id,
                     tool_name=fn.name,
                     tool_args=dict(fn.args),
-                    tool_result=str(result),
+                    tool_result=result,
                 )
 
                 function_responses.append(
                     types.Part.from_function_response(
-                        name=fn.name, response={"result": result}
+                        name=fn.name, response={"result": result.message}
                     )
                 )
 

@@ -1,7 +1,5 @@
-import sys
 import time
 import logging
-import traceback
 import json
 from typing import List, Dict, Optional
 
@@ -56,13 +54,10 @@ async def chat_endpoint(request: ChatRequest):
         return {"text": response_text, "audio": audio_base64, "emotion": "neutral"}
 
     except Exception as e:
-        tb = traceback.format_exc()
-        msg = str(e).strip() or repr(e)
-        sys.stderr.write(f"\n[CHAT 500] {msg}\n{tb}\n")
-        sys.stderr.flush()
+        logger.exception("Chat endpoint hatası")
         raise HTTPException(
             status_code=500,
-            detail={"error": "Chat işlemi başarısız.", "message": msg},
+            detail={"error": "Chat işlemi başarısız.", "message": str(e).strip() or repr(e)},
         )
 
 

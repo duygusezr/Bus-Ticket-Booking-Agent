@@ -14,7 +14,10 @@ from services.number_utils import (
     extract_digit_stream,
     normalize_phone_digits,
     normalize_text,
+    UNIT_MAP,
+    TEN_MAP,
 )
+from services.session_state import ToolResult
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +135,7 @@ def _generate_unique_pnr(conn: sqlite3.Connection, table: str = "rez.rezervasyon
 
 
 # ─────────────────────────────────────────────
-# TC doğrulama
+# TC doğrulama (dahili)
 # ─────────────────────────────────────────────
 
 def _tc_checksum_ok(candidate: str) -> bool:
@@ -171,7 +174,6 @@ def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
     tenth = ((odd_sum * 7) - even_sum) % 10
     eleventh = sum(d[:10]) % 10
 
-    # Yalnızca maskelenmiş sürümü logla — ham TC asla loglanmaz
     masked = stream[:3] + "*" * 5 + stream[-3:]
     logger.debug("TC doğrulama: giriş=%s geçerli=%s", masked, d[9] == tenth and d[10] == eleventh)
 
@@ -182,165 +184,16 @@ def validate_tc_kimlik(tc_no: str) -> tuple[bool, str]:
     return True, "Geçerli"
 
 
-# ─────────────────────────────────────────────
-# Şehir normalizasyonu
-# ─────────────────────────────────────────────
-
 def normalize_city(name: str) -> str:
     return normalize_text(name)
 
 
 # ─────────────────────────────────────────────
-# LLM tarafından çağrılan araçlar
+# E-posta normalizasyonu (dahili)
 # ─────────────────────────────────────────────
-
-def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optional[str] = None) -> str:
-    """Şehirler arası otobüs seferlerini getirir. travel_date (YYYY-MM-DD) verilmişse o tarihi,
-    verilmemişse en yakın müsait tarihleri döndürür."""
-    try:
-        norm_dep = normalize_city(departure_city)
-        norm_dest = normalize_city(destination_city)
-        today = datetime.now().date()
-
-        with _db(DB_PATH) as conn:
-            rows = conn.execute(
-                "SELECT * FROM seferler WHERE LOWER(departure_city) LIKE ? AND LOWER(destination_city) LIKE ?",
-                (f"%{norm_dep}%", f"%{norm_dest}%"),
-            ).fetchall()
-
-        matched = [
-            r for r in rows
-            if norm_dep in normalize_city(r["departure_city"])
-            and norm_dest in normalize_city(r["destination_city"])
-        ]
-
-        if not matched:
-            return f"Maalesef {departure_city} - {destination_city} arasında kayıtlı hiç sefer bulunamadı."
-
-        target_dt = None
-        if travel_date:
-            try:
-                target_dt = datetime.strptime(travel_date.split()[0], "%Y-%m-%d").date()
-            except ValueError:
-                pass
-
-        future_rows: list[tuple] = []
-        for row in matched:
-            try:
-                row_dt = datetime.strptime(row["travel_datetime"], "%m/%d/%Y").date()
-            except ValueError:
-                continue
-            if row_dt >= today:
-                future_rows.append((row, row_dt))
-
-        if target_dt:
-            exact = [(r, dt) for r, dt in future_rows if dt == target_dt]
-            if exact:
-                result = [f"{travel_date} tarihinde {departure_city} → {destination_city} için seferler:"]
-                for row, _ in exact[:3]:
-                    result.append(
-                        f"- Sefer_ID: {row['id']}, Tarih: {row['travel_datetime']}, "
-                        f"Tip: {row['bus_type']}, Fiyat: {row['price']} TL, Boş Koltuklar: {row['available_seats']}"
-                    )
-                return "\n".join(result)
-
-            close = [(r, dt) for r, dt in future_rows if abs((dt - target_dt).days) <= 3]
-            candidates = sorted(close or future_rows, key=lambda x: abs((x[1] - target_dt).days))
-            msg = (
-                f"{target_dt.strftime('%d.%m.%Y')} tarihinde sefer bulunamadı, en yakın tarihler:"
-                if close
-                else f"{target_dt.strftime('%d.%m.%Y')} yakınlarında sefer yok, genel olarak şu tarihler mevcut:"
-            )
-        else:
-            candidates = sorted(future_rows, key=lambda x: x[1])
-            msg = f"{departure_city} - {destination_city} güzergahı için en yakın seferler:"
-
-        if not candidates:
-            return f"{departure_city} - {destination_city} güzergahında uygun sefer bulunamadı."
-
-        result = [msg]
-        seen: set[str] = set()
-        for row, dt in candidates:
-            ds = dt.strftime("%d.%m.%Y")
-            if ds not in seen:
-                result.append(f"- {ds}")
-                seen.add(ds)
-            if len(seen) >= 3:
-                break
-
-        return "\n".join(result)
-
-    except Exception as e:
-        return f"Veritabanı hatası: {e}"
-
-
-def validate_seat_selection(user_input: str, available_seats_str: str) -> str:
-    """Koltuk numarasının (kelime veya rakam) mevcut koltuk listesinde olup olmadığını kontrol et.
-    Sayı dönüşümü için number_utils.extract_digit_stream kullanılır; yinelenen eşleme tablosu yoktur."""
-    text = normalize_text(str(user_input))
-
-    # Önce extract_digit_stream ile sayısal değer çıkarmayı dene
-    digit_stream = extract_digit_stream(text)
-    extracted: Optional[int] = None
-
-    if digit_stream:
-        try:
-            extracted = int(digit_stream[:2])  # En fazla 2 basamak (koltuk 1-50 arası)
-        except ValueError:
-            pass
-
-    # Rakam bulunamazsa regex ile dene
-    if extracted is None:
-        m = re.search(r"\b(\d{1,2})\b", text)
-        if m:
-            extracted = int(m.group(1))
-
-    if extracted is None:
-        return "Hata: Geçerli bir koltuk numarası bulunamadı. Lütfen 1-50 arası bir rakam belirtin."
-
-    try:
-        valid_seats = [int(s.strip()) for s in str(available_seats_str).split(",") if s.strip().isdigit()]
-    except Exception:
-        return f"Hata: Koltuk listesi okunamadı: {available_seats_str}"
-
-    logger.debug("Koltuk doğrulama: çıkarılan=%s mevcut=%s", extracted, valid_seats)
-
-    if extracted in valid_seats:
-        return f"Koltuk {extracted} uygun. Devam etmek istiyor musunuz?"
-    return (
-        f"Hata: {extracted} numaralı koltuk mevcut değil veya dolu. "
-        f"Lütfen şunlardan birini seçin: {available_seats_str}"
-    )
-
-
-def validate_tc_number(tc_no: str) -> str:
-    """Türkiye Cumhuriyeti kimlik numarasını doğrula."""
-    is_valid, msg = validate_tc_kimlik(tc_no)
-    return "T.C. Kimlik numarası başarıyla doğrulandı." if is_valid else f"Hata: {msg}"
-
-
-def validate_phone_number(phone: str) -> str:
-    """Türk telefon numarasını normalize et ve doğrula."""
-    phone = str(phone).strip()
-    normalized = normalize_phone_digits(phone)
-
-    if not normalized.isdigit() or len(normalized) not in (10, 11):
-        digit_count = len(normalized) if normalized.isdigit() else 0
-        return f"Hata: {digit_count} hane algılandı. Lütfen 05XX XXX XX XX formatında tekrar dener misiniz?"
-
-    if len(normalized) == 10 and normalized[0] == "5":
-        normalized = "0" + normalized
-    if not normalized.startswith("0"):
-        return "Hata: Telefon numarası 0 ile başlamalıdır."
-
-    formatted = f"{normalized[0:4]} {normalized[4:7]} {normalized[7:9]} {normalized[9:11]}"
-    return f"Telefon numarası doğrulandı: {formatted}"
-
 
 def _normalize_email_input(text: str) -> str:
     """Sesle dikte edilen e-posta adresini standart formata normalize et."""
-    from services.number_utils import UNIT_MAP, TEN_MAP
-
     t = normalize_text(text)
     tokens = t.split()
     result_tokens: list[str] = []
@@ -367,30 +220,19 @@ def _normalize_email_input(text: str) -> str:
             continue
 
         if tok == "yuz":
-            result_tokens.append("100")
-            i += 1
-            continue
+            result_tokens.append("100"); i += 1; continue
 
         if tok in TEN_MAP:
             if nxt in UNIT_MAP:
-                result_tokens.append(str(TEN_MAP[tok] + UNIT_MAP[nxt]))
-                i += 2
-                continue
+                result_tokens.append(str(TEN_MAP[tok] + UNIT_MAP[nxt])); i += 2; continue
             elif nxt.isdigit() and len(nxt) == 1:
-                result_tokens.append(str(TEN_MAP[tok] + int(nxt)))
-                i += 2
-                continue
-            result_tokens.append(str(TEN_MAP[tok]))
-            i += 1
-            continue
+                result_tokens.append(str(TEN_MAP[tok] + int(nxt))); i += 2; continue
+            result_tokens.append(str(TEN_MAP[tok])); i += 1; continue
 
         if tok in UNIT_MAP:
-            result_tokens.append(str(UNIT_MAP[tok]))
-            i += 1
-            continue
+            result_tokens.append(str(UNIT_MAP[tok])); i += 1; continue
 
-        result_tokens.append(tok)
-        i += 1
+        result_tokens.append(tok); i += 1
 
     t = " ".join(result_tokens)
     t = re.sub(r"\b(at|et)\b", "@", t)
@@ -408,7 +250,6 @@ def _normalize_email_input(text: str) -> str:
     t = re.sub(r"\s+", "", t)
     t = t.rstrip(".,;:!?")
 
-    # Ses çift yinelenme düzeltmesi — yalnızca tam ikili yinelemede uygula
     if t.count("@") == 2 and len(t) % 2 == 0:
         half = len(t) // 2
         first, second = t[:half], t[half:]
@@ -418,16 +259,198 @@ def _normalize_email_input(text: str) -> str:
     return t
 
 
-def validate_email_address(email: str) -> str:
+# ─────────────────────────────────────────────
+# LLM tarafından çağrılan araçlar — ToolResult döndürür
+# ─────────────────────────────────────────────
+
+def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optional[str] = None) -> ToolResult:
+    """Şehirler arası otobüs seferlerini getirir. travel_date (YYYY-MM-DD) verilmişse o tarihi,
+    verilmemişse en yakın müsait tarihleri döndürür."""
+    try:
+        norm_dep = normalize_city(departure_city)
+        norm_dest = normalize_city(destination_city)
+        today = datetime.now().date()
+
+        with _db(DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT * FROM seferler WHERE LOWER(departure_city) LIKE ? AND LOWER(destination_city) LIKE ?",
+                (f"%{norm_dep}%", f"%{norm_dest}%"),
+            ).fetchall()
+
+        matched = [
+            r for r in rows
+            if norm_dep in normalize_city(r["departure_city"])
+            and norm_dest in normalize_city(r["destination_city"])
+        ]
+
+        if not matched:
+            msg = f"Maalesef {departure_city} - {destination_city} arasında kayıtlı hiç sefer bulunamadı."
+            return ToolResult(message=msg, success=False)
+
+        target_dt = None
+        if travel_date:
+            try:
+                target_dt = datetime.strptime(travel_date.split()[0], "%Y-%m-%d").date()
+            except ValueError:
+                pass
+
+        future_rows: list[tuple] = []
+        for row in matched:
+            try:
+                row_dt = datetime.strptime(row["travel_datetime"], "%m/%d/%Y").date()
+            except ValueError:
+                continue
+            if row_dt >= today:
+                future_rows.append((row, row_dt))
+
+        # Tam tarih eşleşmesi
+        if target_dt:
+            exact = [(r, dt) for r, dt in future_rows if dt == target_dt]
+            if exact:
+                lines = [f"{travel_date} tarihinde {departure_city} → {destination_city} için seferler:"]
+                first_id = None
+                for row, _ in exact[:3]:
+                    if first_id is None:
+                        first_id = row["id"]
+                    lines.append(
+                        f"- Sefer_ID: {row['id']}, Tarih: {row['travel_datetime']}, "
+                        f"Tip: {row['bus_type']}, Fiyat: {row['price']} TL, Boş Koltuklar: {row['available_seats']}"
+                    )
+                return ToolResult(
+                    message="\n".join(lines),
+                    success=True,
+                    data={"sefer_id": first_id},
+                )
+
+            close = [(r, dt) for r, dt in future_rows if abs((dt - target_dt).days) <= 3]
+            candidates = sorted(close or future_rows, key=lambda x: abs((x[1] - target_dt).days))
+            msg = (
+                f"{target_dt.strftime('%d.%m.%Y')} tarihinde sefer bulunamadı, en yakın tarihler:"
+                if close
+                else f"{target_dt.strftime('%d.%m.%Y')} yakınlarında sefer yok, genel olarak şu tarihler mevcut:"
+            )
+        else:
+            candidates = sorted(future_rows, key=lambda x: x[1])
+            msg = f"{departure_city} - {destination_city} güzergahı için en yakın seferler:"
+
+        if not candidates:
+            return ToolResult(
+                message=f"{departure_city} - {destination_city} güzergahında uygun sefer bulunamadı.",
+                success=False,
+            )
+
+        lines = [msg]
+        seen: set[str] = set()
+        for row, dt in candidates:
+            ds = dt.strftime("%d.%m.%Y")
+            if ds not in seen:
+                lines.append(f"- {ds}")
+                seen.add(ds)
+            if len(seen) >= 3:
+                break
+
+        return ToolResult(message="\n".join(lines), success=True)
+
+    except Exception as e:
+        return ToolResult(message=f"Veritabanı hatası: {e}", success=False)
+
+
+def validate_seat_selection(user_input: str, available_seats_str: str) -> ToolResult:
+    """Koltuk numarasının mevcut koltuk listesinde olup olmadığını kontrol et."""
+    text = normalize_text(str(user_input))
+
+    digit_stream = extract_digit_stream(text)
+    extracted: Optional[int] = None
+
+    if digit_stream:
+        try:
+            extracted = int(digit_stream[:2])
+        except ValueError:
+            pass
+
+    if extracted is None:
+        m = re.search(r"\b(\d{1,2})\b", text)
+        if m:
+            extracted = int(m.group(1))
+
+    if extracted is None:
+        return ToolResult(
+            message="Hata: Geçerli bir koltuk numarası bulunamadı. Lütfen 1-50 arası bir rakam belirtin.",
+            success=False,
+        )
+
+    try:
+        valid_seats = [int(s.strip()) for s in str(available_seats_str).split(",") if s.strip().isdigit()]
+    except Exception:
+        return ToolResult(message=f"Hata: Koltuk listesi okunamadı: {available_seats_str}", success=False)
+
+    logger.debug("Koltuk doğrulama: çıkarılan=%s mevcut=%s", extracted, valid_seats)
+
+    if extracted in valid_seats:
+        return ToolResult(
+            message=f"Koltuk {extracted} uygun. Devam etmek istiyor musunuz?",
+            success=True,
+            data={"seat": extracted},
+        )
+    return ToolResult(
+        message=(
+            f"Hata: {extracted} numaralı koltuk mevcut değil veya dolu. "
+            f"Lütfen şunlardan birini seçin: {available_seats_str}"
+        ),
+        success=False,
+    )
+
+
+def validate_tc_number(tc_no: str) -> ToolResult:
+    """Türkiye Cumhuriyeti kimlik numarasını doğrula."""
+    is_valid, msg = validate_tc_kimlik(tc_no)
+    if is_valid:
+        return ToolResult(message="T.C. Kimlik numarası başarıyla doğrulandı.", success=True)
+    return ToolResult(message=f"Hata: {msg}", success=False)
+
+
+def validate_phone_number(phone: str) -> ToolResult:
+    """Türk telefon numarasını normalize et ve doğrula."""
+    phone = str(phone).strip()
+    normalized = normalize_phone_digits(phone)
+
+    if not normalized.isdigit() or len(normalized) not in (10, 11):
+        digit_count = len(normalized) if normalized.isdigit() else 0
+        return ToolResult(
+            message=f"Hata: {digit_count} hane algılandı. Lütfen 05XX XXX XX XX formatında tekrar dener misiniz?",
+            success=False,
+        )
+
+    if len(normalized) == 10 and normalized[0] == "5":
+        normalized = "0" + normalized
+    if not normalized.startswith("0"):
+        return ToolResult(message="Hata: Telefon numarası 0 ile başlamalıdır.", success=False)
+
+    formatted = f"{normalized[0:4]} {normalized[4:7]} {normalized[7:9]} {normalized[9:11]}"
+    return ToolResult(
+        message=f"Telefon numarası doğrulandı: {formatted}",
+        success=True,
+        data={"formatted": formatted},
+    )
+
+
+def validate_email_address(email: str) -> ToolResult:
     """E-posta adresini normalize et ve doğrula (ses girişini destekler)."""
     normalized = _normalize_email_input(email)
     logger.debug("E-posta normalize: %r", normalized)
 
     if re.fullmatch(r"[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}", normalized):
-        return f"E-posta doğrulandı: {normalized}"
-    return (
-        f"Hata: E-posta doğrulanamadı. Algılanan: '{normalized}'. "
-        "Örnek format: adsoyad@gmail.com"
+        return ToolResult(
+            message=f"E-posta doğrulandı: {normalized}",
+            success=True,
+            data={"email": normalized},
+        )
+    return ToolResult(
+        message=(
+            f"Hata: E-posta doğrulanamadı. Algılanan: '{normalized}'. "
+            "Örnek format: adsoyad@gmail.com"
+        ),
+        success=False,
     )
 
 
@@ -438,16 +461,15 @@ def make_reservation(
     telefon: str,
     eposta: str,
     koltuk_no: str,
-) -> str:
+) -> ToolResult:
     """
     ATTACH DATABASE kullanarak her iki veritabanında atomik olarak koltuk rezervasyonu yap.
     TC ve telefon depolanmadan önce SHA-256 ile hashlenir — asla düz metin saklanmaz.
-    Hem koltuk güncellemesi hem de rezervasyon ekleme tek bir transaction'da commit edilir.
     """
     try:
         is_valid, msg = validate_tc_kimlik(tc_no)
         if not is_valid:
-            return f"Rezervasyon yapılamadı: {msg}"
+            return ToolResult(message=f"Rezervasyon yapılamadı: {msg}", success=False)
 
         tc_hash = _hash_pii(tc_no)
         phone_hash = _hash_pii(telefon)
@@ -457,18 +479,23 @@ def make_reservation(
 
             row = conn.execute("SELECT * FROM seferler WHERE id = ?", (sefer_id,)).fetchone()
             if not row:
-                return f"Hata: Sefer ID {sefer_id} bulunamadı."
+                return ToolResult(message=f"Hata: Sefer ID {sefer_id} bulunamadı.", success=False)
 
             seats = [s.strip() for s in row["available_seats"].split(",") if s.strip()]
             if str(koltuk_no) not in seats:
-                return (
-                    f"Hata: {koltuk_no} numaralı koltuk boş değil. "
-                    f"Uygun koltuklar: {row['available_seats']}"
+                return ToolResult(
+                    message=(
+                        f"Hata: {koltuk_no} numaralı koltuk boş değil. "
+                        f"Uygun koltuklar: {row['available_seats']}"
+                    ),
+                    success=False,
                 )
 
             seats.remove(str(koltuk_no))
-            new_seats = ",".join(seats)
-            conn.execute("UPDATE seferler SET available_seats = ? WHERE id = ?", (new_seats, sefer_id))
+            conn.execute(
+                "UPDATE seferler SET available_seats = ? WHERE id = ?",
+                (",".join(seats), sefer_id),
+            )
 
             pnr_code = _generate_unique_pnr(conn, table="rez.rezervasyonlar")
             transaction_time = datetime.now().strftime("%m/%d/%Y")
@@ -485,8 +512,12 @@ def make_reservation(
             )
 
         logger.info("Rezervasyon başarılı: PNR=%s Sefer=%s Yolcu=%s", pnr_code, sefer_id, yolcu_ad_soyad)
-        return f"Başarılı! PNR Kodu: {pnr_code}"
+        return ToolResult(
+            message=f"Başarılı! PNR Kodu: {pnr_code}",
+            success=True,
+            data={"pnr": pnr_code},
+        )
 
     except Exception as e:
         logger.exception("Rezervasyon hatası")
-        return f"Rezervasyon sırasında hata: {e}"
+        return ToolResult(message=f"Rezervasyon sırasında hata: {e}", success=False)

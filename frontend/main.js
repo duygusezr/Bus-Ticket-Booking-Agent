@@ -620,6 +620,10 @@ chatInput.addEventListener('input', () => { if (chatInput.value.trim().length > 
 const chatHistory = [];
 let isSending = false;
 
+// Her sayfa yüklemesinde benzersiz session ID üret.
+// Bu sayede birden fazla sekme aynı oturumu paylaşmaz.
+const SESSION_ID = crypto.randomUUID();
+
 async function sendMessage() {
     if (isSending) return;
     const text = chatInput.value.trim();
@@ -638,7 +642,8 @@ async function sendMessage() {
     const payload = JSON.stringify({
         text: text,
         lang: currentLang,
-        history: chatHistory.slice(0, -1).slice(-10)
+        history: chatHistory.slice(0, -1).slice(-10),
+        session_id: SESSION_ID,
     });
 
     if (chatSocket && chatSocket.readyState === WebSocket.OPEN) {

@@ -3,24 +3,41 @@ services/session_state.py
 ─────────────────────────
 Onaylanan rezervasyon verilerini sunucu tarafında saklayan hafif session yönetimi.
 
-Neden burada?
-  chat.py'daki _inject_ground_truth() fonksiyonu, onaylı sefer/koltuk/tarih
-  bilgilerini ham konuşma metninden regex ile çıkarıyordu. Bu yaklaşım LLM'in
-  ifadesindeki küçük değişikliklere karşı kırılgandı. Artık veriler araç
-  sonuçları döndüğünde buraya açıkça yazılıyor; LLM'e de buradan okunarak
-  enjekte ediliyor.
-
-Kullanım:
-  session = get_session("default")
-  session.sefer_id = 42
-  session.seat = "15"
-  truth = build_truth_injection(session)   # "[ABSOLUTE SYSTEM TRUTH: ...]"
+Araçlar artık ToolResult dataclass'ı döndürür; bu sayede session_state
+araç çıktısını string üzerinden regex ile değil, doğrudan data alanından okur.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
+
+# ─────────────────────────────────────────────
+# Araç dönüş tipi
+# ─────────────────────────────────────────────
+
+@dataclass
+class ToolResult:
+    """
+    Tüm LLM araçlarının döndürdüğü yapılandırılmış sonuç.
+
+    message : LLM'e ve kullanıcıya gösterilecek insan okunabilir metin.
+    success : İşlem başarılı mıydı?
+    data    : session_state'in regex olmadan okuyacağı anahtar-değer verisi.
+    """
+    message: str
+    success: bool = True
+    data: Dict[str, Any] = field(default_factory=dict)
+
+    def __str__(self) -> str:
+        """Gemini araç döngüsü string bekler; message'ı döndür."""
+        return self.message
+
+
+# ─────────────────────────────────────────────
+# Oturum modeli
+# ─────────────────────────────────────────────
 
 @dataclass
 class BookingSession:
@@ -31,7 +48,6 @@ class BookingSession:
     travel_date: Optional[str] = None
     seat: Optional[str] = None
     passenger_name: Optional[str] = None
-    # Doğrulanmış değerler (araç sonucundan)
     validated_phone: Optional[str] = None
     validated_email: Optional[str] = None
     tc_verified: bool = False
@@ -58,57 +74,50 @@ def update_session_from_tool_result(
     session_id: str,
     tool_name: str,
     tool_args: dict,
-    tool_result: str,
+    tool_result: ToolResult,
 ) -> None:
     """
-    LLM araç döngüsünden gelen her başarılı araç çağrısında çağrılır.
-    Araç adına göre hangi alanın güncelleneceğini belirler.
+    LLM araç döngüsünden gelen her araç çağrısında çağrılır.
+    Veriyi ToolResult.data'dan okur — regex ayrıştırma yoktur.
     """
+    if not tool_result.success:
+        return
+
     session = get_session(session_id)
+    d = tool_result.data
 
     if tool_name == "get_bus_trips":
-        # Sefer sonucundan şehirleri ve tarihi kaydet
-        if "departure_city" in tool_args:
-            session.departure = tool_args["departure_city"]
-        if "destination_city" in tool_args:
-            session.destination = tool_args["destination_city"]
-        if "travel_date" in tool_args and tool_args["travel_date"]:
+        session.departure = tool_args.get("departure_city") or session.departure
+        session.destination = tool_args.get("destination_city") or session.destination
+        if tool_args.get("travel_date"):
             session.travel_date = tool_args["travel_date"]
-        # Sefer ID'yi araç sonucundan çıkar (örn: "Sefer_ID: 42")
-        import re
-        m = re.search(r"Sefer_ID:\s*(\d+)", tool_result)
-        if m:
-            session.sefer_id = int(m.group(1))
+        if "sefer_id" in d:
+            session.sefer_id = d["sefer_id"]
 
     elif tool_name == "validate_seat_selection":
-        # "Koltuk 15 uygun." → seat = "15"
-        import re
-        m = re.search(r"Koltuk\s+(\d+)\s+uygun", tool_result)
-        if m:
-            session.seat = m.group(1)
+        if "seat" in d:
+            session.seat = str(d["seat"])
 
     elif tool_name == "validate_tc_number":
-        if "başarıyla doğrulandı" in tool_result:
-            session.tc_verified = True
+        session.tc_verified = True
 
     elif tool_name == "validate_phone_number":
-        # "Telefon numarası doğrulandı: 0537 279 14 37"
-        import re
-        m = re.search(r"doğrulandı:\s*(.+)", tool_result)
-        if m:
-            session.validated_phone = m.group(1).strip()
+        if "formatted" in d:
+            session.validated_phone = d["formatted"]
 
     elif tool_name == "validate_email_address":
-        # "E-posta doğrulandı: user@gmail.com"
-        import re
-        m = re.search(r"doğrulandı:\s*(\S+)", tool_result)
-        if m:
-            session.validated_email = m.group(1).strip()
+        if "email" in d:
+            session.validated_email = d["email"]
 
     elif tool_name == "make_reservation":
-        # Rezervasyon tamamlandıysa oturumu temizle
-        if "PNR Kodu:" in tool_result:
+        if "pnr" in d:
             clear_session(session_id)
+
+    # make_reservation argümanlarından yolcu adını kaydet
+    if tool_name == "make_reservation" and "yolcu_ad_soyad" in tool_args:
+        # Oturum temizlenmeden önce adı okuyabiliriz ama oturum zaten silindi;
+        # bu alan bilgi amaçlıdır, kritik değil.
+        pass
 
 
 def build_truth_injection(session: BookingSession) -> str:
@@ -126,6 +135,8 @@ def build_truth_injection(session: BookingSession) -> str:
         parts.append(f"STRICT_DATE={session.travel_date}")
     if session.seat:
         parts.append(f"STRICT_SEAT={session.seat}")
+    if session.passenger_name:
+        parts.append(f"STRICT_NAME={session.passenger_name}")
     if session.validated_phone:
         parts.append(f"STRICT_PHONE={session.validated_phone}")
     if session.validated_email:
