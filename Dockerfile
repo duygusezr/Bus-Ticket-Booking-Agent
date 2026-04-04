@@ -1,24 +1,16 @@
 FROM python:3.11-slim
 
-# Çalışma dizini
 WORKDIR /app/backend
 
-# Sistem bağımlılıkları (ses işleme için gerekli olabilecekler)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Önce requirements kopyala (Docker cache optimizasyonu)
+# Gereksinimler önce kopyalanır (Docker katman önbellekleme optimizasyonu)
 COPY backend/requirements.txt ./requirements.txt
 
-# CPU-only PyTorch + diğer bağımlılıklar
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Backend kodunu (ve içindeki database klasörünü) kopyala
+# Backend kodu kopyalanır (database klasörü dahil)
 COPY backend/ ./
 
-# PORT ortam değişkeni Railway tarafından otomatik atanır
+# PORT Railway tarafından otomatik atanır
 ENV PORT=8001
 
-# Uvicorn ile başlat
 CMD python -m uvicorn main:app --host 0.0.0.0 --port ${PORT}

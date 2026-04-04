@@ -375,10 +375,27 @@ const closeSidebarBtn = document.getElementById('close-sidebar');
 
 // ============================================================
 // BACKEND URL KONFİGÜRASYONU
+//
+// Üretim URL'ini kaynak koduna gömmemek için önce window.__APP_CONFIG__
+// nesnesine bakılır. Bu nesne index.html içinde deploy sırasında enjekte
+// edilebilir:
+//
+//   <script>
+//     window.__APP_CONFIG__ = {
+//       apiBase: "https://your-backend.up.railway.app",
+//       wsBase:  "wss://your-backend.up.railway.app"
+//     };
+//   </script>
+//
+// Yapılandırma yoksa localhost'a fallback (geliştirme modu).
 // ============================================================
+const _cfg = window.__APP_CONFIG__ || {};
 const IS_LOCAL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const API_BASE = IS_LOCAL ? 'http://localhost:8001' : 'https://bus-ticket-booking-agent-production.up.railway.app';
-const WS_BASE = IS_LOCAL ? 'ws://localhost:8001' : 'wss://bus-ticket-booking-agent-production.up.railway.app';
+const API_BASE = _cfg.apiBase || (IS_LOCAL ? 'http://localhost:8001' : '');
+const WS_BASE  = _cfg.wsBase  || (IS_LOCAL ? 'ws://localhost:8001'  : '');
+if (!API_BASE) {
+    console.warn('[CONFIG] API_BASE tanımlı değil. window.__APP_CONFIG__.apiBase ayarlayın.');
+}
 console.log(`[CONFIG] API: ${API_BASE} | WS: ${WS_BASE}`);
 
 // ============================================================

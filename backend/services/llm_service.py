@@ -1,21 +1,21 @@
+import logging
+import asyncio
 from datetime import datetime
 from typing import AsyncGenerator, List, Dict, Any
-import asyncio
+
 import google.genai as genai
 from google.genai import types
 
 from config import settings
 from services.memory_service import get_current_summary, update_memory
+from services.session_state import update_session_from_tool_result
+
+logger = logging.getLogger(__name__)
 
 GEMINI_MODEL = settings.GEMINI_CHAT_MODEL
 
-# Singleton client — created once at module load, reused across all requests
+# Singleton client — modül yüklendiğinde bir kez oluşturulur, tüm isteklerde paylaşılır.
 _GEMINI_CLIENT = genai.Client(api_key=settings.GOOGLE_API_KEY)
-
-_TOOL_NAMES = [
-    "get_bus_trips", "make_reservation", "validate_seat_selection",
-    "validate_tc_number", "validate_phone_number", "validate_email_address",
-]
 
 
 def _get_tools() -> dict:
@@ -43,7 +43,10 @@ def _build_gemini_history(history: List[Dict[str, str]]) -> list:
 
 def _build_system_prompt(lang: str, summary: str) -> str:
     now = datetime.now()
-    prefix = f"BUGÜNÜN TARİHİ: {now.strftime('%Y-%m-%d')}\nŞU ANKİ SAAT: {now.strftime('%H:%M')}\n\n"
+    prefix = (
+        f"BUGÜNÜN TARİHİ: {now.strftime('%Y-%m-%d')}\n"
+        f"ŞU ANKİ SAAT: {now.strftime('%H:%M')}\n\n"
+    )
 
     if lang == "en":
         prompt = prefix + settings.SYSTEM_PROMPT_EN
@@ -53,14 +56,18 @@ def _build_system_prompt(lang: str, summary: str) -> str:
         prompt += "\n\n## STRICT LANGUAGE RULE\nCevaplarını SADECE Türkçe olarak vermelisin."
 
     if summary:
-        header = "--- SUMMARY OF PREVIOUS CONVERSATION ---" if lang == "en" else "--- GEÇMİŞ KONUŞMALARIN ÖZETİ ---"
-        prompt += f"\n\n{header}\n{summary}\n{'-'*37}"
+        header = (
+            "--- SUMMARY OF PREVIOUS CONVERSATION ---"
+            if lang == "en"
+            else "--- GEÇMİŞ KONUŞMALARIN ÖZETİ ---"
+        )
+        prompt += f"\n\n{header}\n{summary}\n{'-' * 37}"
 
     return prompt
 
 
 def _has_function_call(response: Any) -> bool:
-    """Safe check: does the first candidate's first part contain a function_call?"""
+    """İlk adayın ilk parçasında function_call var mı? Güvenli kontrol."""
     try:
         parts = response.candidates[0].content.parts
         return bool(parts) and parts[0].function_call is not None
@@ -74,7 +81,7 @@ async def generate_chat_response(
     lang: str,
     session_id: str = "default",
 ) -> str:
-    """Generate a Gemini response with manual tool-call loop."""
+    """Manuel araç-çağrı döngüsüyle Gemini yanıtı üret."""
     try:
         tools_map = _get_tools()
         tool_functions = list(tools_map.values())
@@ -95,7 +102,7 @@ async def generate_chat_response(
 
         response = await chat.send_message(text)
 
-        # Tool-call loop (max 10 iterations to prevent infinite loops)
+        # Araç çağrı döngüsü (sonsuz döngüyü önlemek için max 10 iterasyon)
         for _ in range(10):
             if not _has_function_call(response):
                 break
@@ -105,17 +112,32 @@ async def generate_chat_response(
                 fn = part.function_call
                 if fn is None:
                     continue
-                print(f"[LLM] Tool call: {fn.name}({dict(fn.args)})")
+
+                logger.info("Araç çağrısı: %s(%s)", fn.name, dict(fn.args))
+
                 if fn.name not in tools_map:
-                    print(f"[LLM] Unknown tool: {fn.name}")
+                    logger.warning("Bilinmeyen araç: %s", fn.name)
                     continue
+
                 try:
                     result = tools_map[fn.name](**fn.args)
                 except Exception as tool_err:
                     result = f"Hata: {tool_err}"
-                print(f"[LLM] Tool result: {result}")
+
+                logger.info("Araç sonucu [%s]: %s", fn.name, result)
+
+                # Oturum durumunu araç sonucuna göre güncelle
+                update_session_from_tool_result(
+                    session_id=session_id,
+                    tool_name=fn.name,
+                    tool_args=dict(fn.args),
+                    tool_result=str(result),
+                )
+
                 function_responses.append(
-                    types.Part.from_function_response(name=fn.name, response={"result": result})
+                    types.Part.from_function_response(
+                        name=fn.name, response={"result": result}
+                    )
                 )
 
             if not function_responses:
@@ -131,7 +153,7 @@ async def generate_chat_response(
 
     except Exception as e:
         err = str(e)
-        print(f"[LLM_ERROR] {err}")
+        logger.error("LLM hatası: %s", err)
         if "429" in err or "quota" in err.lower():
             return "Şu an API kotam doldu, biraz bekleyip tekrar dener misin?"
         raise RuntimeError(f"Gemini LLM Hatası: {err}") from e
@@ -143,7 +165,14 @@ async def generate_chat_response_stream(
     lang: str,
     session_id: str = "default",
 ) -> AsyncGenerator[str, None]:
-    """Streaming wrapper: resolves tool calls first, then yields the final text."""
+    """
+    Streaming sarmalayıcı.
+
+    Not: Gemini SDK'sının araç çağrısını streaming modda çözmek karmaşık
+    olduğundan, araç döngüsü önce tam olarak tamamlanır, ardından metin
+    tek seferde yield edilir. Gerçek token akışı için Gemini'nin native
+    streaming + araç döngüsü entegrasyonu gereklidir.
+    """
     try:
         final_text = await generate_chat_response(text, history, lang, session_id)
         yield final_text
