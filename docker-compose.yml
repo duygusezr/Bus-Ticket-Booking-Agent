@@ -1,0 +1,65 @@
+# ============================================================
+# Bus Ticket Booking Agent — Docker Compose
+# ============================================================
+# Başlatma:   docker compose up --build
+# Durdurma:   docker compose down
+# Loglar:     docker compose logs -f
+# ============================================================
+
+services:
+  # ── PostgreSQL ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: ela-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: bus_ticket
+    ports:
+      - "5433:5432"   # Host 5433 → Container 5432 (local PG ile çakışmasın)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bus_ticket"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Backend (FastAPI + Ela) ────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ela-backend
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      PORT: 8001
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-2.5-flash}
+      DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/bus_ticket
+      CORS_ORIGINS: "*"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/database:/app/backend/database   # SQLite + CSV lokal dosyalara sync
+
+  # ── Frontend (Static) ─────────────────────────────────────
+  frontend:
+    image: nginx:alpine
+    container_name: ela-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+    driver: local
