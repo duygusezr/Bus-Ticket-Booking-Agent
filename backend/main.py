@@ -105,6 +105,25 @@ async def get_reservation(pnr: str):
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/db/download/{db_name}")
+async def download_db(db_name: str):
+    """Railway'deki güncel DB dosyasını indir."""
+    from fastapi.responses import FileResponse
+    from services.tools import REZ_DB_PATH, DB_PATH
+
+    db_map = {
+        "rezervasyonlar": REZ_DB_PATH,
+        "bilet_sistemi": DB_PATH,
+    }
+    path = db_map.get(db_name)
+    if not path or not path.exists():
+        return {"error": f"'{db_name}' bulunamadı. Geçerli: {list(db_map.keys())}"}
+    return FileResponse(
+        path=str(path),
+        filename=f"{db_name}.db",
+        media_type="application/x-sqlite3",
+    )
+
 
 @app.websocket("/ws")
 async def _dummy_ws(websocket):
