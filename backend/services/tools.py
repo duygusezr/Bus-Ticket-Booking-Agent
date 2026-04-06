@@ -99,6 +99,19 @@ def init_db() -> None:
                 reservation_status TEXT
             )
         """)
+
+        # Migration: eski sütun adlarını yenilere çevir
+        try:
+            cols = [row[1] for row in conn.execute("PRAGMA table_info(rezervasyonlar)").fetchall()]
+            if "tc_identity_no" in cols and "tc_identity_hash" not in cols:
+                conn.execute("ALTER TABLE rezervasyonlar RENAME COLUMN tc_identity_no TO tc_identity_hash")
+                logger.info("Migration: tc_identity_no → tc_identity_hash")
+            if "phone_number" in cols and "phone_hash" not in cols:
+                conn.execute("ALTER TABLE rezervasyonlar RENAME COLUMN phone_number TO phone_hash")
+                logger.info("Migration: phone_number → phone_hash")
+        except Exception as mig_err:
+            logger.warning("Kolon migration başarısız: %s", mig_err)
+
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_pnr_unique ON rezervasyonlar(pnr_code)"
         )
@@ -108,7 +121,8 @@ def init_db() -> None:
                 records = [
                     (
                         r["pnr_code"], int(r["sefer_id"]), r["passenger_full_name"],
-                        r.get("tc_identity_hash", ""), r.get("phone_hash", ""),
+                        r.get("tc_identity_hash") or r.get("tc_identity_no", ""),
+                        r.get("phone_hash") or r.get("phone_number", ""),
                         r["email_address"], r["seat_number"],
                         r["transaction_datetime"], r["reservation_status"],
                     )
