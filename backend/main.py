@@ -66,6 +66,46 @@ async def health_check():
     return {"status": "ok"}
 
 
+@app.get("/api/reservations")
+async def list_reservations():
+    """Son rezervasyonları listele (debug/doğrulama amaçlı)."""
+    import sqlite3
+    from services.tools import REZ_DB_PATH
+    try:
+        conn = sqlite3.connect(REZ_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT pnr_code, sefer_id, passenger_full_name, seat_number, "
+            "email_address, transaction_datetime, reservation_status "
+            "FROM rezervasyonlar ORDER BY id DESC LIMIT 20"
+        ).fetchall()
+        conn.close()
+        return {"count": len(rows), "reservations": [dict(r) for r in rows]}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/reservations/{pnr}")
+async def get_reservation(pnr: str):
+    """PNR koduna göre rezervasyon sorgula."""
+    import sqlite3
+    from services.tools import REZ_DB_PATH
+    try:
+        conn = sqlite3.connect(REZ_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT pnr_code, sefer_id, passenger_full_name, seat_number, "
+            "email_address, transaction_datetime, reservation_status "
+            "FROM rezervasyonlar WHERE pnr_code = ?", (pnr.upper(),)
+        ).fetchone()
+        conn.close()
+        if row:
+            return {"found": True, "reservation": dict(row)}
+        return {"found": False, "message": f"PNR '{pnr}' bulunamadı."}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.websocket("/ws")
 async def _dummy_ws(websocket):
     """Absorb stray HMR / Railway health-check WebSocket connections silently."""
