@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import re
 from datetime import datetime
 from typing import AsyncGenerator, List, Dict, Any
 
@@ -65,6 +66,21 @@ def _build_system_prompt(lang: str, summary: str) -> str:
         prompt += f"\n\n{header}\n{summary}\n{'-' * 37}"
 
     return prompt
+
+
+# ── İç enjeksiyon kalıplarını LLM çıktısından temizle ─────────
+_INTERNAL_BLOCK_RE = re.compile(
+    r'\[(?:ABSOLUTE SYSTEM TRUTH|SİSTEM BİLGİSİ|SYSTEM INFORMATION)'
+    r'[^\]]*\]',
+    re.IGNORECASE | re.DOTALL,
+)
+
+def _sanitize_response(text: str) -> str:
+    """LLM yanıtından iç enjeksiyon bloklarını sil."""
+    cleaned = _INTERNAL_BLOCK_RE.sub('', text)
+    # Birden fazla boşluk / satır başını düzelt
+    cleaned = re.sub(r'  +', ' ', cleaned)
+    return cleaned.strip()
 
 
 def _has_function_call(response: Any) -> bool:
@@ -148,7 +164,7 @@ async def generate_chat_response(
 
             response = await chat.send_message(function_responses)
 
-        result_text = response.text or ""
+        result_text = _sanitize_response(response.text or "")
         asyncio.create_task(update_memory(text, result_text, session_id))
         return result_text
 
