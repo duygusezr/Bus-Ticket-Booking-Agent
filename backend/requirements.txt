@@ -5,7 +5,7 @@
 
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-edge-tts==7.0.2
+edge-tts==7.2.8
 python-dotenv==1.1.0
 python-multipart==0.0.20
 websockets==14.2
