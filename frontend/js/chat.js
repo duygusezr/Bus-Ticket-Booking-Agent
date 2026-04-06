@@ -10,7 +10,8 @@ import { playBase64Audio, stopAudio, initWebAudio } from './audio.js';
 const _cfg   = window.__APP_CONFIG__ || {};
 const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 export const API_BASE = _cfg.apiBase || (isLocal ? 'http://localhost:8001' : '');
-export const WS_BASE  = _cfg.wsBase  || (isLocal ? 'ws://localhost:8001'  : '');
+export const WS_BASE  = _cfg.wsBase  || (isLocal ? 'ws://localhost:8001'
+    : API_BASE.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:'));
 
 if (!API_BASE) {
     console.warn('[CONFIG] API_BASE tanımlı değil. window.__APP_CONFIG__.apiBase ayarlayın.');

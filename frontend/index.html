@@ -88,6 +88,16 @@
         </div>
     </div>
 
+    <!-- Production Yapılandırması -->
+    <script>
+        // Railway backend URL'nizi buraya girin.
+        // Örnek: https://bus-ticket-booking-agent-production.up.railway.app
+        window.__APP_CONFIG__ = {
+            apiBase: "https://bus-ticket-booking-agent-production.up.railway.app",
+            wsBase:  "wss://bus-ticket-booking-agent-production.up.railway.app"
+        };
+    </script>
+
     <!-- Ana JavaScript -->
     <script type="module" src="./main.js?v=4"></script>
 </body>
