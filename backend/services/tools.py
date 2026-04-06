@@ -557,6 +557,32 @@ async def make_reservation(
             )
 
     logger.info("Rezervasyon başarılı: PNR=%s Sefer=%s Yolcu=%s", pnr_code, sefer_id, yolcu_ad_soyad)
+
+    # CSV'ye de ekle (kalıcılık için)
+    try:
+        with _db(REZ_DB_PATH) as conn:
+            last_id = conn.execute(
+                "SELECT id FROM rezervasyonlar WHERE pnr_code = ?", (pnr_code,)
+            ).fetchone()
+            row_id = last_id[0] if last_id else ""
+
+        file_exists = REZ_CSV_PATH.exists() and REZ_CSV_PATH.stat().st_size > 0
+        with open(REZ_CSV_PATH, "a", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow([
+                    "id", "pnr_code", "sefer_id", "passenger_full_name",
+                    "tc_identity_hash", "phone_hash", "email_address",
+                    "seat_number", "transaction_datetime", "reservation_status",
+                ])
+            writer.writerow([
+                row_id, pnr_code, sefer_id, yolcu_ad_soyad, tc_hash, phone_hash,
+                eposta, koltuk_no, transaction_time, "completed",
+            ])
+        logger.info("CSV'ye eklendi: %s", pnr_code)
+    except Exception as csv_err:
+        logger.warning("CSV sync başarısız: %s", csv_err)
+
     return ToolResult(
         message=f"Başarılı! PNR Kodu: {pnr_code}",
         success=True,
