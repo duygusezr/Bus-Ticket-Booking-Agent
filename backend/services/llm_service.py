@@ -99,82 +99,101 @@ async def generate_chat_response(
     session_id: str = "default",
 ) -> str:
     """Manuel araç-çağrı döngüsüyle Gemini yanıtı üret."""
-    try:
-        tools_map = _get_tools()
-        tool_functions = list(tools_map.values())
+    MAX_RETRIES = 3
+    last_err: Exception | None = None
 
-        summary = get_current_summary(session_id)
-        system_prompt = _build_system_prompt(lang, summary)
+    for attempt in range(MAX_RETRIES):
+        try:
+            tools_map = _get_tools()
+            tool_functions = list(tools_map.values())
 
-        chat = _GEMINI_CLIENT.aio.chats.create(
-            model=GEMINI_MODEL,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                tools=tool_functions,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-                temperature=0.0,
-            ),
-            history=_build_gemini_history(history),
-        )
+            summary = get_current_summary(session_id)
+            system_prompt = _build_system_prompt(lang, summary)
 
-        response = await chat.send_message(text)
+            chat = _GEMINI_CLIENT.aio.chats.create(
+                model=GEMINI_MODEL,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    tools=tool_functions,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                    temperature=0.0,
+                ),
+                history=_build_gemini_history(history),
+            )
 
-        # Araç çağrı döngüsü (sonsuz döngüyü önlemek için max 10 iterasyon)
-        for _ in range(10):
-            if not _has_function_call(response):
-                break
+            response = await chat.send_message(text)
 
-            function_responses: list[types.Part] = []
-            for part in response.candidates[0].content.parts:
-                fn = part.function_call
-                if fn is None:
-                    continue
+            # Araç çağrı döngüsü (sonsuz döngüyü önlemek için max 10 iterasyon)
+            for _ in range(10):
+                if not _has_function_call(response):
+                    break
 
-                logger.info("Araç çağrısı: %s(%s)", fn.name, dict(fn.args))
+                function_responses: list[types.Part] = []
+                for part in response.candidates[0].content.parts:
+                    fn = part.function_call
+                    if fn is None:
+                        continue
 
-                if fn.name not in tools_map:
-                    logger.warning("Bilinmeyen araç: %s", fn.name)
-                    continue
+                    logger.info("Araç çağrısı: %s(%s)", fn.name, dict(fn.args))
 
-                try:
-                    result: ToolResult = await tools_map[fn.name](**fn.args) \
-                        if asyncio.iscoroutinefunction(tools_map[fn.name]) \
-                        else tools_map[fn.name](**fn.args)
-                except Exception as tool_err:
-                    logger.exception("Araç çağrısı hatası [%s]: %s", fn.name, tool_err)
-                    result = ToolResult(message=f"Hata: {tool_err}", success=False)
+                    if fn.name not in tools_map:
+                        logger.warning("Bilinmeyen araç: %s", fn.name)
+                        continue
 
-                logger.info("Araç sonucu [%s]: %s", fn.name, result.message)
+                    try:
+                        result: ToolResult = await tools_map[fn.name](**fn.args) \
+                            if asyncio.iscoroutinefunction(tools_map[fn.name]) \
+                            else tools_map[fn.name](**fn.args)
+                    except Exception as tool_err:
+                        logger.exception("Araç çağrısı hatası [%s]: %s", fn.name, tool_err)
+                        result = ToolResult(message=f"Hata: {tool_err}", success=False)
 
-                # Oturum durumunu araç sonucuna göre güncelle
-                update_session_from_tool_result(
-                    session_id=session_id,
-                    tool_name=fn.name,
-                    tool_args=dict(fn.args),
-                    tool_result=result,
-                )
+                    logger.info("Araç sonucu [%s]: %s", fn.name, result.message)
 
-                function_responses.append(
-                    types.Part.from_function_response(
-                        name=fn.name, response={"result": result.message}
+                    # Oturum durumunu araç sonucuna göre güncelle
+                    update_session_from_tool_result(
+                        session_id=session_id,
+                        tool_name=fn.name,
+                        tool_args=dict(fn.args),
+                        tool_result=result,
                     )
-                )
 
-            if not function_responses:
-                break
+                    function_responses.append(
+                        types.Part.from_function_response(
+                            name=fn.name, response={"result": result.message}
+                        )
+                    )
 
-            response = await chat.send_message(function_responses)
+                if not function_responses:
+                    break
 
-        result_text = _sanitize_response(response.text or "")
-        asyncio.create_task(update_memory(text, result_text, session_id))
-        return result_text
+                response = await chat.send_message(function_responses)
 
-    except Exception as e:
-        err = str(e)
-        logger.error("LLM hatası: %s", err)
-        if "429" in err or "quota" in err.lower():
-            return "Şu an API kotam doldu, biraz bekleyip tekrar dener misin?"
-        raise RuntimeError(f"Gemini LLM Hatası: {err}") from e
+            result_text = _sanitize_response(response.text or "")
+            asyncio.create_task(update_memory(text, result_text, session_id))
+            return result_text
+
+        except Exception as e:
+            last_err = e
+            err = str(e)
+            is_transient = "503" in err or "429" in err or "quota" in err.lower() or "unavailable" in err.lower()
+
+            if is_transient and attempt < MAX_RETRIES - 1:
+                wait = (attempt + 1) * 1.5          # 1.5s, 3s
+                logger.warning("Gemini geçici hata (deneme %d/%d): %s — %.1fs sonra yeniden deneniyor",
+                               attempt + 1, MAX_RETRIES, err[:120], wait)
+                await asyncio.sleep(wait)
+                continue
+
+            logger.error("LLM hatası: %s", err)
+            if is_transient:
+                return ("Gemini şu an yoğun, lütfen birkaç saniye sonra tekrar deneyin."
+                        if lang == "tr"
+                        else "Gemini is currently busy, please try again in a few seconds.")
+            raise RuntimeError(f"Gemini LLM Hatası: {err}") from e
+
+    # Buraya ulaşılmamalı ama güvenlik için:
+    raise RuntimeError(f"Gemini LLM Hatası: {last_err}") from last_err
 
 
 async def generate_chat_response_stream(
