@@ -146,9 +146,7 @@ async def generate_chat_response(
             if not function_responses:
                 break
 
-            response = await chat.send_message(
-                types.Content(role="user", parts=function_responses)
-            )
+            response = await chat.send_message(function_responses)
 
         result_text = response.text or ""
         asyncio.create_task(update_memory(text, result_text, session_id))
