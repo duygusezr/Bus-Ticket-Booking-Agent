@@ -1,4 +1,5 @@
 import logging
+import os
 import warnings
 import sys
 from contextlib import asynccontextmanager
@@ -31,13 +32,36 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize DB at startup — not at import time
-    from services.tools import init_db
+    # ── Startup ──────────────────────────────────────────────
+    from services.tools import init_db, get_all_seferler, get_all_rezervasyonlar
     from services.llm_service import GEMINI_MODEL
+    from services.postgres_service import (
+        init_postgres, close_postgres, seed_seferler_to_pg, seed_rezervasyonlar_to_pg,
+    )
+
+    # SQLite başlat
     init_db()
     logger.info("Gemini model: %s", GEMINI_MODEL)
     logger.info("CORS origins: %s", settings.CORS_ORIGINS)
+
+    # PostgreSQL başlat (opsiyonel — DATABASE_URL yoksa devre dışı kalır)
+    database_url = os.getenv("DATABASE_URL")
+    pg_ok = await init_postgres(database_url)
+    if pg_ok:
+        logger.info("PostgreSQL aktif — dual-write modu etkin.")
+        # Seferleri PG'ye seed et (ilk seferde)
+        seferler = get_all_seferler()
+        await seed_seferler_to_pg(seferler)
+        # Mevcut rezervasyonları PG'ye aktar (eksik olanları tamamlar)
+        rezervasyonlar = get_all_rezervasyonlar()
+        await seed_rezervasyonlar_to_pg(rezervasyonlar)
+    else:
+        logger.info("PostgreSQL devre dışı — sadece SQLite + CSV kullanılıyor.")
+
     yield
+
+    # ── Shutdown ─────────────────────────────────────────────
+    await close_postgres()
 
 
 app = FastAPI(
@@ -63,7 +87,11 @@ app.include_router(tts_router)
 
 @app.get("/")
 async def health_check():
-    return {"status": "ok"}
+    from services.postgres_service import is_pg_active
+    return {
+        "status": "ok",
+        "postgres": "active" if is_pg_active() else "disabled",
+    }
 
 
 @app.get("/api/reservations")
@@ -104,6 +132,27 @@ async def get_reservation(pnr: str):
         return {"found": False, "message": f"PNR '{pnr}' bulunamadı."}
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.get("/api/pg/reservations")
+async def list_pg_reservations():
+    """PostgreSQL'deki rezervasyonları listele."""
+    from services.postgres_service import is_pg_active, get_pg_reservations
+    if not is_pg_active():
+        return {"error": "PostgreSQL aktif değil. DATABASE_URL tanımlı mı?"}
+    rows = await get_pg_reservations(limit=50)
+    return {"count": len(rows), "source": "postgresql", "reservations": rows}
+
+
+@app.get("/api/pg/status")
+async def pg_status():
+    """PostgreSQL bağlantı durumunu kontrol et."""
+    from services.postgres_service import is_pg_active
+    return {
+        "postgresql_active": is_pg_active(),
+        "database_url_set": bool(os.getenv("DATABASE_URL")),
+    }
+
 
 @app.get("/api/db/download/{db_name}")
 async def download_db(db_name: str):

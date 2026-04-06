@@ -13,6 +13,9 @@ httpx==0.28.1
 watchfiles==1.0.4
 google-genai==1.10.0
 
+# ── PostgreSQL dual-write desteği ──────────────────────────────────────────
+asyncpg==0.30.0
+
 # ── İsteğe bağlı: Semantik önbellek ───────────────────────────────────────
 # Semantic cache şu an devre dışı. Etkinleştirmek için services/ dizininde
 # yeni bir cache servisi yaz ve bu bağımlılıkları requirements.txt'e ekle:

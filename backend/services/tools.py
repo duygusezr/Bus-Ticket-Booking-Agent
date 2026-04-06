@@ -137,6 +137,24 @@ def init_db() -> None:
             )
 
 
+def get_all_seferler() -> list[dict]:
+    """SQLite'daki tüm seferleri dict listesi olarak döndür (PG seed için)."""
+    with _db(DB_PATH) as conn:
+        rows = conn.execute("SELECT * FROM seferler").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_rezervasyonlar() -> list[dict]:
+    """SQLite'daki tüm rezervasyonları dict listesi olarak döndür (PG seed için)."""
+    with _db(REZ_DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT pnr_code, sefer_id, passenger_full_name, tc_identity_hash, "
+            "phone_hash, email_address, seat_number, transaction_datetime, "
+            "reservation_status FROM rezervasyonlar ORDER BY id"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def _hash_pii(value: str) -> str:
     """PII alanları için tek yönlü SHA-256 hash (TC, telefon). Geri döndürülemez."""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
@@ -153,6 +171,45 @@ def _generate_unique_pnr(conn: sqlite3.Connection, length: int = 8) -> str:
         if not exists:
             return pnr
     raise RuntimeError("PNR üretimi 20 denemede başarısız oldu.")
+
+
+# ─────────────────────────────────────────────
+# CSV tam senkronizasyon
+# ─────────────────────────────────────────────
+
+def _full_csv_sync() -> None:
+    """
+    Rezervasyonlar DB'sinin tamamını CSV'ye yaz (üzerine yazar).
+    Her rezervasyon sonrası çağrılır — CSV her zaman DB ile senkron kalır.
+    """
+    try:
+        with _db(REZ_DB_PATH) as conn:
+            rows = conn.execute(
+                "SELECT id, pnr_code, sefer_id, passenger_full_name, "
+                "tc_identity_hash, phone_hash, email_address, "
+                "seat_number, transaction_datetime, reservation_status "
+                "FROM rezervasyonlar ORDER BY id"
+            ).fetchall()
+
+        with open(REZ_CSV_PATH, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "id", "pnr_code", "sefer_id", "passenger_full_name",
+                "tc_identity_hash", "phone_hash", "email_address",
+                "seat_number", "transaction_datetime", "reservation_status",
+            ])
+            for row in rows:
+                writer.writerow([
+                    row["id"], row["pnr_code"], row["sefer_id"],
+                    row["passenger_full_name"], row["tc_identity_hash"],
+                    row["phone_hash"], row["email_address"],
+                    row["seat_number"], row["transaction_datetime"],
+                    row["reservation_status"],
+                ])
+
+        logger.info("CSV tam sync tamamlandı: %d kayıt → %s", len(rows), REZ_CSV_PATH)
+    except Exception as e:
+        logger.warning("CSV tam sync başarısız: %s", e)
 
 
 # ─────────────────────────────────────────────
@@ -350,8 +407,6 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optio
                         f"- Sefer_ID: {row['id']}, Tarih: {row['travel_datetime']}, "
                         f"Tip: {row['bus_type']}, Fiyat: {row['price']} TL, Boş Koltuklar: {row['available_seats']}"
                     )
-                # sefer_ids: tüm sefer ID'leri (kullanıcı koltuk seçince LLM doğru ID'yi belirler)
-                # sefer_id: geriye dönük uyumluluk için ilk ID
                 return ToolResult(
                     message="\n".join(lines),
                     success=True,
@@ -499,13 +554,11 @@ async def make_reservation(
     koltuk_no: str,
 ) -> ToolResult:
     """
-    İki ayrı SQLite veritabanına güvenli yaz: seferler.db ve rezervasyonlar.db.
+    Üç katmanlı yazma: SQLite (birincil) → PostgreSQL (ikincil) → CSV (yedek).
 
-    ATTACH DATABASE yerine iki ayrı bağlantı kullanılır çünkü ATTACH her istek
-    için kilit yarışması yaratır; SQLite WAL modunda bile tek-yazar kuralı
-    geçerlidir. asyncio.Lock ile eş zamanlı yazma engellenir.
-
-    TC ve telefon depolanmadan önce SHA-256 ile hashlenir.
+    1. SQLite: Seferler DB'de koltuk güncelle + Rezervasyonlar DB'ye kayıt ekle
+    2. PostgreSQL: Aynı veriyi PG'ye async olarak yaz (varsa)
+    3. CSV: Tüm rezervasyonlar tablosunu CSV'ye tam sync et
     """
     is_valid, msg = validate_tc_kimlik(tc_no)
     if not is_valid:
@@ -515,6 +568,7 @@ async def make_reservation(
     phone_hash = _hash_pii(telefon)
 
     async with _reservation_lock:
+        # ── 1. SQLite yazma ──────────────────────────────────────
         # Koltuk kontrol + güncelleme (seferler DB)
         with _db(DB_PATH) as trips_conn:
             trips_conn.execute("PRAGMA journal_mode=WAL")
@@ -535,9 +589,10 @@ async def make_reservation(
                 )
 
             seats.remove(str(koltuk_no))
+            new_available_seats = ",".join(seats)
             trips_conn.execute(
                 "UPDATE seferler SET available_seats = ? WHERE id = ?",
-                (",".join(seats), sefer_id),
+                (new_available_seats, sefer_id),
             )
 
         # Rezervasyon kaydı (rezervasyonlar DB)
@@ -558,30 +613,34 @@ async def make_reservation(
 
     logger.info("Rezervasyon başarılı: PNR=%s Sefer=%s Yolcu=%s", pnr_code, sefer_id, yolcu_ad_soyad)
 
-    # CSV'ye de ekle (kalıcılık için)
+    # ── 2. PostgreSQL dual-write (fire-and-forget) ───────────
     try:
-        with _db(REZ_DB_PATH) as conn:
-            last_id = conn.execute(
-                "SELECT id FROM rezervasyonlar WHERE pnr_code = ?", (pnr_code,)
-            ).fetchone()
-            row_id = last_id[0] if last_id else ""
+        from services.postgres_service import is_pg_active, sync_reservation_to_pg, sync_seat_update_to_pg
+        if is_pg_active():
+            # Her iki PG işlemini paralel çalıştır
+            rez_task = sync_reservation_to_pg(
+                pnr_code=pnr_code,
+                sefer_id=sefer_id,
+                passenger_full_name=yolcu_ad_soyad,
+                tc_identity_hash=tc_hash,
+                phone_hash=phone_hash,
+                email_address=eposta,
+                seat_number=koltuk_no,
+                transaction_datetime=transaction_time,
+                reservation_status="completed",
+            )
+            seat_task = sync_seat_update_to_pg(sefer_id, new_available_seats)
+            pg_results = await asyncio.gather(rez_task, seat_task, return_exceptions=True)
+            for i, result in enumerate(pg_results):
+                if isinstance(result, Exception):
+                    logger.error("PG sync görev %d hatası: %s", i, result)
+    except ImportError:
+        pass  # asyncpg yüklü değilse sessizce atla
+    except Exception as pg_err:
+        logger.warning("PostgreSQL sync hatası (uygulama devam ediyor): %s", pg_err)
 
-        file_exists = REZ_CSV_PATH.exists() and REZ_CSV_PATH.stat().st_size > 0
-        with open(REZ_CSV_PATH, "a", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f)
-            if not file_exists:
-                writer.writerow([
-                    "id", "pnr_code", "sefer_id", "passenger_full_name",
-                    "tc_identity_hash", "phone_hash", "email_address",
-                    "seat_number", "transaction_datetime", "reservation_status",
-                ])
-            writer.writerow([
-                row_id, pnr_code, sefer_id, yolcu_ad_soyad, tc_hash, phone_hash,
-                eposta, koltuk_no, transaction_time, "completed",
-            ])
-        logger.info("CSV'ye eklendi: %s", pnr_code)
-    except Exception as csv_err:
-        logger.warning("CSV sync başarısız: %s", csv_err)
+    # ── 3. CSV tam senkronizasyon ────────────────────────────
+    _full_csv_sync()
 
     return ToolResult(
         message=f"Başarılı! PNR Kodu: {pnr_code}",
