@@ -141,6 +141,7 @@ async def generate_chat_response(
                         if asyncio.iscoroutinefunction(tools_map[fn.name]) \
                         else tools_map[fn.name](**fn.args)
                 except Exception as tool_err:
+                    logger.exception("Araç çağrısı hatası [%s]: %s", fn.name, tool_err)
                     result = ToolResult(message=f"Hata: {tool_err}", success=False)
 
                 logger.info("Araç sonucu [%s]: %s", fn.name, result.message)
