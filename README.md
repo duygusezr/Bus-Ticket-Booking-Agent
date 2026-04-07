@@ -33,7 +33,7 @@ Mevcut otobüs bileti platformlarında kullanıcı, güzergah seçimi → tarih 
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐│
 │  │ Chat Panel   │  │  3D Avatar   │  │  WebSocket İstemcisi   ││
 │  │ (Metin/Ses)  │  │  (Three.js + │  │  (Streaming Yanıt)     ││
-│  │              │  │   VRM 1.0)   │  │                        ││
+│  │  VAD Sistemi │  │   VRM 1.0)   │  │                        ││
 │  └──────┬───────┘  └──────┬───────┘  └───────────┬────────────┘│
 │         │                 │                      │              │
 └─────────┼─────────────────┼──────────────────────┼──────────────┘
@@ -183,7 +183,7 @@ Bu sorunlar `stt_service.py` içindeki çok katmanlı normalizasyon pipeline'ı 
 
 **Neden Edge-TTS?**
 
-- **Hız ve Lityans:** Microsoft'un Edge tarayıcısı için kullandığı bu motor, gerçek zamanlı yanıtlar için optimize edilmiştir.
+- **Hız ve Lisans:** Microsoft'un Edge tarayıcısı için kullandığı bu motor, gerçek zamanlı yanıtlar için optimize edilmiştir.
 - **Maliyet:** Ücretsiz ve sınırsız bir şekilde kullanılabilmesi projenin sürdürülebilirliğini sağlar.
 - **Kalite:** Nöral ses teknolojisi sayesinde doğal vurgular ve akıcı bir okuma sunar.
 
@@ -195,6 +195,51 @@ TTS motorlarına gönderilmeden önce metin şu işlemlerden geçer:
 - Sayılar Türkçe okunuşlarına dönüştürülür: `1.191,38 TL` → *"bin yüz doksan bir lira otuz sekiz kuruş"*
 - 8+ haneli uzun sayılar (PNR, ID) rakam rakam okunur: `12345678` → *"bir iki üç dört beş altı yedi sekiz"*
 - Geçici ağ hataları (503) için otomatik **1 yeniden deneme** uygulanır
+
+---
+
+## 🎙️ Sesli Etkileşim Sistemi — VAD (Voice Activity Detection)
+
+Sistem, "basılı tut" (push-to-talk) yaklaşımı yerine **sürekli dinleme ve otomatik konuşma algılama** modeli üzerine inşa edilmiştir. Kullanıcı deneyimi, bir insan ile karşılıklı konuşmaya mümkün olduğunca yaklaştırılmıştır.
+
+### Temel Davranış
+
+| Durum | Ne Olur |
+| --- | --- |
+| Mikrofon butonu tıklandı | Mikrofon açılır, sürekli dinleme başlar (yeşil nabız animasyonu) |
+| Kullanıcı konuşmaya başladı | Ses seviyesi eşiği aşıldığında kayıt otomatik başlar |
+| Kullanıcı sustu (≥1000ms) | Kayıt durur, ses STT'ye gönderilir, Ela cevap verir |
+| Ela konuşurken kullanıcı konuştu | **Ela anında susar**, kayıt hemen başlar (barge-in) |
+| Mikrofon butonu tekrar tıklandı | Mikrofon kapanır |
+
+### Barge-In (Araya Girme)
+
+Ela konuşurken kullanıcı söz almak istediğinde sistem şu adımları izler:
+
+1. `micAnalyser`, Ela'nın hoparlör sesinden **bağımsız** olarak yalnızca mikrofon girdisini ölçer — `destination`'a bağlanmadığı için hoparlörden geri besleme olmaz.
+2. Ses seviyesi `BARGE_IN_THRESHOLD` değerini aşarsa `stopEla()` çağrılır → Ela anında durur.
+3. Kayıt **aynı anda** başlatılır → kullanıcının ilk hecesi kaybolmaz.
+
+### Eko Koruması
+
+Tarayıcı seviyesinde `echoCancellation`, `noiseSuppression` ve `autoGainControl` etkin tutulur. Buna ek olarak mikrofon `AudioContext` içinde Ela'nın ses grafiğine hiç bağlanmaz; yalnızca ölçüm için ayrı bir `micAnalyser` düğümünden geçirilir.
+
+### Frekans Bandına Odaklanma
+
+Ses seviyesi hesaplanırken tüm frekans spektrumu yerine yalnızca **insan konuşma bandı (300 Hz – 3400 Hz)** kullanılır. Bu yaklaşım, Ela'nın hoparlörden sızan düşük frekanslı seslerinin ve ortam gürültüsünün yanlış kayıt tetiklemesini azaltır.
+
+### Eşik Değerleri ve Ayarlar
+
+Tüm sabitleri `frontend/js/audio.js` başında değiştirebilirsiniz:
+
+| Sabit | Varsayılan | Açıklama |
+| --- | --- | --- |
+| `VAD_THRESHOLD` | `15` | Normal sessizlikte kayıt başlatma eşiği (0-255) |
+| `BARGE_IN_THRESHOLD` | `12` | Ela konuşurken barge-in eşiği (daha hassas) |
+| `SILENCE_DURATION_MS` | `1000` | Bu kadar sessizlik → kayıt biter, STT'ye gider |
+| `MIN_SPEECH_MS` | `300` | Daha kısa ses → gürültü olarak atlanır |
+
+> **İpucu:** Gürültülü bir ortamda kullanıyorsanız `VAD_THRESHOLD` ve `BARGE_IN_THRESHOLD` değerlerini 5-10 puan artırın. Ela çok erken kesiyorsa `SILENCE_DURATION_MS`'i 1300-1500'e çıkarın.
 
 ---
 
@@ -220,15 +265,15 @@ TTS motorlarına gönderilmeden önce metin şu işlemlerden geçer:
 | **STT** | `POST /api/stt` | Ses dosyası alır, transkripsiyon döndürür |
 | **TTS** | `POST /api/tts` | Metin alır, base64 kodlanmış ses döndürür |
 
-### Frontend (`index.html`, `main.js`, `style.css`)
+### Frontend (`frontend/`)
 
-| Bileşen | Teknoloji | Açıklama |
+| Bileşen | Dosya | Açıklama |
 | --- | --- | --- |
-| **3D Avatar** | Three.js + @pixiv/three-vrm | VRM 1.0 formatında 3D karakter modeli. Göz kırpma, nefes alma, kafa hareketi, lip-sync animasyonları |
-| **Lip-Sync** | Web Audio API (FFT) | Ses frekans analizi ile gerçek zamanlı ağız hareketleri (aa, ih, ee, oh, ou morph'ları) |
-| **Duygu Sistemi** | Custom Expression Engine | 10 farklı duygu durumu (happy, sad, angry, think, curious vb.) + yumuşak geçiş (lerp) |
-| **WebSocket Chat** | Native WebSocket | Streaming metin + ses güncellemeleri |
-| **Ses Kayıt** | MediaRecorder API | Basılı tutarak konuşma (push-to-talk) |
+| **3D Avatar** | `js/avatar.js` | Three.js + @pixiv/three-vrm. VRM 1.0 formatında 3D karakter modeli. Göz kırpma, nefes alma, kafa hareketi, lip-sync animasyonları. |
+| **Ses & VAD** | `js/audio.js` | Web Audio API tabanlı ses çalma, VAD döngüsü, barge-in, eko koruması, MediaRecorder kayıt yönetimi. |
+| **Sohbet** | `js/chat.js` | WebSocket bağlantısı, mesaj gönderme, streaming metin render, sohbet geçmişi UI, çok dilli destek. |
+| **Giriş Noktası** | `main.js` | Tüm modülleri birleştirir, UI olay dinleyicilerini bağlar. Mikrofon toggle → `toggleVAD()`. |
+| **Stiller** | `style.css` | Responsive tasarım + VAD animasyonları (yeşil nabız: `vad-active`, hızlı nabız: `vad-active.recording`). |
 
 ---
 
@@ -262,10 +307,17 @@ Bu sayede kullanıcı EN moduna geçtiğinde tüm konuşma akışı, hata mesajl
 ## 🔄 Konuşma Akışı (Rezervasyon Pipeline)
 
 ```text
-Kullanıcı: "Yarın Ankara'dan İstanbul'a gitmek istiyorum"
+Kullanıcı konuşur (VAD otomatik algılar)
     │
     ▼
-[1] STT Normalizasyonu (sesli giriş ise)
+[0] VAD Döngüsü (requestAnimationFrame)
+    ├── Ses seviyesi > eşik → kayıt başlar
+    ├── Ela konuşuyorsa → eşik düşürülür (barge-in modu)
+    │   └── Kullanıcı ses çıkarırsa → Ela durur, kayıt anında başlar
+    └── Sessizlik ≥ 1000ms → kayıt biter, STT'ye gider
+    │
+    ▼
+[1] STT Normalizasyonu
     │
     ▼
 [2] _preprocess_request()
@@ -290,6 +342,7 @@ Kullanıcı: "Yarın Ankara'dan İstanbul'a gitmek istiyorum"
     │                                              │
     ▼ ◄──────────────────────────────────────────────
 [6] Frontend: Metin + Ses Güncelle
+    └── elaIsSpeaking = true → VAD barge-in moduna girer
 ```
 
 ### Rezervasyon Adımları
@@ -380,10 +433,14 @@ Uzun konuşmalarda Gemini'nin token bağlam penceresi dolabilir. Bu sorunu çöz
 Bus Ticket Booking Agent/
 ├── frontend/                   # Ön yüz klasörü
 │   ├── index.html              # Ana frontend sayfası
-│   ├── main.js                 # 3D avatar, WebSocket, UI mantığı
-│   ├── style.css               # Arayüz stilleri
+│   ├── main.js                 # Giriş noktası; UI olayları, VAD toggle bağlantısı
+│   ├── style.css               # Arayüz stilleri (VAD animasyonları dahil)
 │   ├── ela_avatar.png          # Chat baloncuğu avatar ikonu
 │   ├── house_bg.jpg            # Arka plan resmi
+│   ├── js/
+│   │   ├── audio.js            # VAD, barge-in, eko koruması, ses çalma
+│   │   ├── avatar.js           # 3D avatar render, lip-sync, duygu sistemi
+│   │   └── chat.js             # WebSocket, mesaj gönderme, sohbet geçmişi UI
 │   └── models/
 │       └── character.vrm       # 3D karakter modeli (VRM 1.0)
 ├── start.bat                   # Tek tıkla başlatma scripti
@@ -473,7 +530,8 @@ Backend `http://localhost:8001` adresinde, frontend ise `http://localhost:3000` 
 | **Three.js** | r164 | 3D render engine |
 | **@pixiv/three-vrm** | 3.0.0 | VRM model yükleme/animasyon |
 | **Chart.js** | — | Duygu radar grafiği |
-| **Web Audio API** | Native | Lip-sync frekans analizi |
+| **Web Audio API** | Native | Lip-sync frekans analizi + VAD ses ölçümü |
+| **MediaRecorder API** | Native | VAD tabanlı ses kaydı (80ms chunk) |
 
 ---
 
@@ -486,6 +544,8 @@ Backend `http://localhost:8001` adresinde, frontend ise `http://localhost:3000` 
 | Semantik Cache Hit Süresi | ~5ms |
 | STT Transkripsiyon | ~1–2 saniye |
 | Avatar FPS | 60 FPS (modern tarayıcı) |
+| VAD Tepki Süresi | ~16ms (1 frame, requestAnimationFrame) |
+| Barge-in Gecikme | <100ms (kayıt chunk aralığı) |
 
 ---
 
