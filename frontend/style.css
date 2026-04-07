@@ -222,9 +222,22 @@ html {
     transform: scale(1.05);
 }
 
+/* Basılı tut modu (artık kullanılmıyor, geriye dönük uyumluluk) */
 .mic-btn.recording {
     background: #d32f2f !important;
     animation: pulse 1s infinite;
+}
+
+/* VAD aktif modu: yeşil + yavaş nabız */
+.mic-btn.vad-active {
+    background: #2e7d32 !important;
+    animation: pulse-green 2s ease-in-out infinite;
+}
+
+/* VAD aktif + ses algılandı: daha hızlı nabız */
+.mic-btn.vad-active.recording {
+    background: #1b5e20 !important;
+    animation: pulse-green-fast 0.6s ease-in-out infinite;
 }
 
 .powered-by {
@@ -242,15 +255,43 @@ html {
         transform: scale(1);
         box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.4);
     }
-
     70% {
         transform: scale(1.05);
         box-shadow: 0 0 0 10px rgba(211, 47, 47, 0);
     }
-
     100% {
         transform: scale(1);
         box-shadow: 0 0 0 0 rgba(211, 47, 47, 0);
+    }
+}
+
+@keyframes pulse-green {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(46, 125, 50, 0.5);
+    }
+    50% {
+        transform: scale(1.06);
+        box-shadow: 0 0 0 8px rgba(46, 125, 50, 0);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(46, 125, 50, 0);
+    }
+}
+
+@keyframes pulse-green-fast {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(27, 94, 32, 0.6);
+    }
+    50% {
+        transform: scale(1.1);
+        box-shadow: 0 0 0 12px rgba(27, 94, 32, 0);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(27, 94, 32, 0);
     }
 }
 
@@ -258,7 +299,6 @@ html {
 .avatar-panel {
     flex: 3.5;
     position: relative;
-    /* Sağ panelin arka planı orijinal manzarası olacak */
     background-image: url('./house_bg.jpg');
     background-size: cover;
     background-position: center;
@@ -291,13 +331,10 @@ html {
     justify-content: center;
     gap: 8px;
     line-height: 1;
-    /* Satır yüksekliğini sabitle */
 }
 
-/* AI Rozeti - Daha şık ve hizalı hale getirildi */
 .avatar-header-text h3 b {
     background: rgba(255, 255, 255, 0.2);
-    /* Cam efekti */
     color: #fff;
     padding: 4px 10px;
     border-radius: 8px;
@@ -309,7 +346,6 @@ html {
     align-items: center;
     height: 24px;
     margin-top: -2px;
-    /* Manuel ince ayar (baseline'a oturtmak için) */
 }
 
 .avatar-header-text p {
@@ -318,13 +354,10 @@ html {
     font-weight: 700;
     color: #fff;
     background: rgba(0, 0, 0, 0.3);
-    /* Daha soft bir siyah */
     display: inline-block;
     padding: 6px 20px;
     border-radius: 50px;
-    /* Daha oval pill görünümü */
     backdrop-filter: blur(8px);
-    /* Glassmorphism efekti */
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
@@ -374,30 +407,27 @@ canvas#canvas {
     }
 
     .main-layout {
-        flex-direction: column-reverse; /* Sohbet paneli altta, avatar alanı üstte */
+        flex-direction: column-reverse;
         border-radius: 0; 
         box-shadow: none;
     }
 
-    /* Avatar Paneli: Daha uzun yapılarak modelin net görünmesi sağlandı */
     .avatar-panel {
         flex: none;
-        height: 35vh; /* Ekranın %35'i (Daha geniş) */
-        min-height: 260px; /* Sıkışmayı önleyen asgari yükseklik */
+        height: 35vh;
+        min-height: 260px;
         border-left: none;
         border-bottom: 2px solid #eee;
     }
 
-    /* Sohbet Paneli: Kalan tüm alanı kaplar (Klavye açıldığında küçülür) */
     .chat-panel {
         flex: 1;
         height: auto; 
         width: 100%;
-        overflow: hidden; /* İçerik taşmasını engelle */
+        overflow: hidden;
         position: static;
     }
 
-    /* EN/TR Butonları: Ekranın sol üst köşesinde avatara bitişik yüzer */
     .chat-header {
         position: absolute;
         top: 15px;
@@ -408,13 +438,11 @@ canvas#canvas {
         background: transparent;
     }
     
-    /* Yüzen dili seçici arkaplanını avatar üstünde okunur yap */
     .lang-switcher {
         background: rgba(255, 255, 255, 0.85);
         box-shadow: 0 4px 10px rgba(0,0,0,0.15);
     }
 
-    /* Avatar Başlık Metni (Avatarın Yüzünü Kapatmaması İçin Alta Alındı) */
     .avatar-header-text {
         top: auto;
         bottom: 12px; 
@@ -430,7 +458,6 @@ canvas#canvas {
         padding: 2px 8px;
     }
 
-    /* Mobilde yer kaplamaması adına alt başlığı gizliyoruz, avatarın kendini göstermesi daha önemli */
     .avatar-header-text p {
         display: none;
     }
@@ -443,7 +470,6 @@ canvas#canvas {
         font-size: 16px;
     }
 
-    /* Sohbet Alanı Boşlukları (Padding) Azaltma */
     .chat-history-area {
         padding: 15px 15px 5px 15px;
         gap: 15px;
@@ -458,7 +484,6 @@ canvas#canvas {
         padding: 10px 15px;
     }
 
-    /* Girdi Alanı: Klavye ile bitişik olacağı için kompakt tutuldu */
     .chat-input-area {
         padding: 10px 15px 15px 15px;
     }
@@ -485,7 +510,6 @@ canvas#canvas {
 }
 
 @media screen and (max-width: 480px) {
-    /* Daha küçük ekranlar için ince ayar */
     .avatar-panel {
         min-height: 220px;
     }
@@ -495,4 +519,4 @@ canvas#canvas {
     .avatar-header-text h3 {
         font-size: 18px;
     }
-}
+}

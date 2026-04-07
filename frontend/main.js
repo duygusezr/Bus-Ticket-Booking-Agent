@@ -3,6 +3,9 @@
  *
  * Tüm modülleri bir araya getirir ve UI olay dinleyicilerini bağlar.
  * İş mantığı avatar.js / audio.js / chat.js içindedir.
+ *
+ * Mikrofon artık "basılı tut" değil, VAD (Voice Activity Detection)
+ * toggle sistemiyle çalışır: bir kez tıkla → sürekli dinle.
  */
 import './js/avatar.js';   // Sahneyi başlatır ve animasyon döngüsünü çalıştırır
 import {
@@ -10,8 +13,7 @@ import {
     playBase64Audio,
     stopAudio,
     toggleMute,
-    startRecording,
-    stopRecording,
+    toggleVAD,
 } from './js/audio.js';
 import {
     API_BASE,
@@ -28,12 +30,12 @@ initWebSocket();
 
 // ─── UI elementleri ───────────────────────────────────────────
 
-const chatInput     = document.getElementById('chat-input');
-const sendBtn       = document.getElementById('send-btn');
-const micBtn        = document.getElementById('mic-btn');
-const audioBtn      = document.getElementById('audio-btn');
-const langTrBtn     = document.getElementById('lang-tr');
-const langEnBtn     = document.getElementById('lang-en');
+const chatInput       = document.getElementById('chat-input');
+const sendBtn         = document.getElementById('send-btn');
+const micBtn          = document.getElementById('mic-btn');
+const audioBtn        = document.getElementById('audio-btn');
+const langTrBtn       = document.getElementById('lang-tr');
+const langEnBtn       = document.getElementById('lang-en');
 const historySidebar  = document.getElementById('history-sidebar');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar');
 const closeSidebarBtn  = document.getElementById('close-sidebar');
@@ -61,24 +63,26 @@ audioBtn?.addEventListener('click', async () => {
     toggleMute(audioBtn);
 });
 
-// ─── Mikrofon (basılı tut - konuş) ───────────────────────────
+// ─── Mikrofon: VAD Toggle ──────────────────────────────────────
+// Tek tıkla aç, tek tıkla kapat. Konuşma algılanınca otomatik kayıt.
 
-micBtn?.addEventListener('mousedown', async () => {
+micBtn?.addEventListener('click', async () => {
     await initWebAudio();
-    micBtn.classList.add('recording');
-    if (subtitle) subtitle.textContent = 'Dinliyorum...';
-    startRecording(
-        text => { if (chatInput) chatInput.value = text; sendMessage(); },
+    await toggleVAD(
+        micBtn,
+        // Transkript gelince input'a yaz ve gönder
+        text => {
+            if (chatInput) chatInput.value = text;
+            sendMessage();
+        },
         API_BASE,
         getLang,
         subtitle,
     );
 });
 
-micBtn?.addEventListener('mouseup', () => {
-    stopRecording();
-    micBtn.classList.remove('recording');
-});
+// Dokunmatik ekranlar için (mousedown/mouseup artık kullanılmıyor)
+micBtn?.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
 
 // ─── Sidebar ─────────────────────────────────────────────────
 
