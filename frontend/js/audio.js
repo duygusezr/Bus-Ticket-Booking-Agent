@@ -1,42 +1,54 @@
 /**
  * js/audio.js
- * Web Audio API başlatma, ses çalma (base64 MP3),
- * ses açma/kapama, VAD (Voice Activity Detection) tabanlı STT.
  *
- * VAD Mantığı:
- *  - Mikrofon sürekli açık tutulur (toggle ile).
- *  - Ses seviyesi eşiği (VAD_THRESHOLD) aşılınca kayıt başlar.
- *  - Ses seviyesi eşiğin altında kalırsa ve SILENCE_DURATION_MS
- *    geçerse kayıt durur ve STT'ye gönderilir.
- *  - Ela konuşurken (isSpeaking=true) mikrofon sessizce dinler
- *    ama kayıt başlatmaz (eko koruması).
+ * VAD sistemi — barge-in destekli:
+ *  - Mikrofon sürekli açık (toggle ile aç/kapat).
+ *  - Ela konuşurken sen de konuşabilirsin → Ela hemen durur, seni dinler.
+ *  - İlk kelimeni kaçırmamak için kayıt barge-in anında başlar.
+ *  - Eko koruması: Ela'nın sesinin hoparlörden mikrofona geri dönmemesi için
+ *    echoCancellation + ayrı micAnalyser (destination'a bağlanmıyor).
+ *
+ * Eşikler:
+ *  BARGE_IN_THRESHOLD  — Ela konuşurken bu değeri aşarsan seni kesiyor (düşük)
+ *  VAD_THRESHOLD       — Normal sessizlikte kayıt başlatma eşiği (biraz daha yüksek)
+ *  SILENCE_DURATION_MS — Bu kadar sessizlik → kayıt biter, STT'ye gider
+ *  MIN_SPEECH_MS       — Daha kısa ses → gürültü, atlanır
  */
 import { setSpeaking, setListening, setActiveSource, setAnalyser, stopLipSync } from './avatar.js';
 
 // ─── Sabitler ─────────────────────────────────────────────────
-const VAD_THRESHOLD        = 18;    // 0-255 arası ses seviyesi eşiği
-const SILENCE_DURATION_MS  = 1200; // Bu kadar sessizlik olursa kayıt biter (ms)
-const MIN_SPEECH_DURATION_MS = 400; // Çok kısa sesleri (gürültü) atlamak için minimum kayıt süresi (ms)
+const VAD_THRESHOLD       = 15;   // Normal dinleme eşiği (0-255)
+const BARGE_IN_THRESHOLD  = 12;   // Ela konuşurken barge-in eşiği (daha hassas)
+const SILENCE_DURATION_MS = 1000; // Sessizlik süresi → kayıt biter
+const MIN_SPEECH_MS       = 300;  // Daha kısa → gürültü, atla
 
 // ─── Modül durumu ─────────────────────────────────────────────
-let audioCtx       = null;
-let analyser       = null;
-let dataArray      = null;
-let isAudioMuted   = false;
-let _activeSource  = null;
+let audioCtx      = null;
+let analyser      = null;   // Ela sesi için (lip-sync)
+let dataArray     = null;
+let isAudioMuted  = false;
+let _activeSource = null;
 
-// VAD durumu
-let vadActive           = false;  // Kullanıcı VAD'ı açtı mı?
-let isSpeaking          = false;  // Ela şu an konuşuyor mu? (kayıt engellenir)
-let micStream           = null;   // Sürekli açık tutulan mikrofon stream'i
-let micAnalyser         = null;   // Mikrofona özel analyser (Ela sesinden bağımsız)
-let micDataArray        = null;
-let vadRafId            = null;   // requestAnimationFrame ID
-let isRecording         = false;  // VAD kaydı aktif mi?
-let mediaRecorder       = null;
-let audioChunks         = [];
-let silenceTimer        = null;
-let speechStartTime     = null;
+let elaIsSpeaking = false;  // Ela şu an hoparlörden konuşuyor mu?
+
+// VAD
+let vadActive      = false;
+let micStream      = null;
+let micAnalyser    = null;
+let micDataArray   = null;
+let vadRafId       = null;
+let isRecording    = false;
+let mediaRecorder  = null;
+let audioChunks    = [];
+let silenceTimer   = null;
+let speechStartTime = null;
+
+// Geri çağırmalar (vadLoop'a parametre yerine modül düzeyinde saklanır)
+let _onTranscript = null;
+let _apiBase      = null;
+let _getLang      = null;
+let _subtitle     = null;
+let _micBtn       = null;
 
 // ─── WebAudio başlatma ────────────────────────────────────────
 
@@ -52,9 +64,25 @@ export async function initWebAudio() {
     if (audioCtx.state === 'suspended') await audioCtx.resume();
 }
 
-// ─── Ses durdurma ────────────────────────────────────────────
+// ─── Ses seviyesi ölçümü ──────────────────────────────────────
 
-export function stopAudio() {
+function getMicVolume() {
+    if (!micAnalyser || !micDataArray) return 0;
+    micAnalyser.getByteFrequencyData(micDataArray);
+    // Konuşma frekans bandına odaklan (300 Hz - 3400 Hz arası)
+    const binCount = micDataArray.length;
+    const sampleRate = audioCtx.sampleRate;
+    const binHz = sampleRate / (micAnalyser.fftSize);
+    const lowBin  = Math.floor(300  / binHz);
+    const highBin = Math.min(Math.floor(3400 / binHz), binCount - 1);
+    let sum = 0;
+    for (let i = lowBin; i <= highBin; i++) sum += micDataArray[i];
+    return sum / (highBin - lowBin + 1);
+}
+
+// ─── Ela'yı durdur (barge-in) ────────────────────────────────
+
+function stopEla() {
     if (_activeSource) {
         try { _activeSource.stop(); } catch (_) {}
         _activeSource = null;
@@ -62,19 +90,145 @@ export function stopAudio() {
     }
     setSpeaking(false);
     stopLipSync();
-    isSpeaking = false;
+    elaIsSpeaking = false;
 }
 
-// ─── Ela konuşma durumu setter (chat.js'den çağrılır) ─────────
+// ─── Ses durdurma (dışarıdan çağrılır) ───────────────────────
 
-export function setElaSpeaking(val) {
-    isSpeaking = val;
+export function stopAudio() {
+    stopEla();
+}
+
+// ─── VAD kaydını başlat ───────────────────────────────────────
+
+function startVadRecording() {
+    if (isRecording || !micStream) return;
+    isRecording = true;
+    audioChunks = [];
+    speechStartTime = Date.now();
+
+    try {
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+            ? 'audio/webm;codecs=opus'
+            : 'audio/webm';
+        mediaRecorder = new MediaRecorder(micStream, { mimeType });
+    } catch {
+        mediaRecorder = new MediaRecorder(micStream);
+    }
+
+    mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+    };
+    mediaRecorder.start(80); // 80ms chunk → düşük gecikme
+
+    if (_micBtn) _micBtn.classList.add('recording');
+    if (_subtitle) _subtitle.textContent = 'Dinliyorum...';
+}
+
+// ─── VAD kaydını durdur ve STT'ye gönder ─────────────────────
+
+function stopVadRecording() {
+    if (!isRecording || !mediaRecorder) return;
+    isRecording = false;
+
+    const elapsed = Date.now() - (speechStartTime || 0);
+    if (_micBtn) _micBtn.classList.remove('recording');
+
+    mediaRecorder.onstop = async () => {
+        if (elapsed < MIN_SPEECH_MS) {
+            // Çok kısa → gürültü
+            if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+            return;
+        }
+
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        const blob = new Blob(audioChunks, { type: mimeType });
+        if (blob.size < 500) {
+            if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+            return;
+        }
+
+        if (_subtitle) _subtitle.textContent = 'Anlıyorum...';
+
+        const formData = new FormData();
+        formData.append('file', blob, 'recording.webm');
+        formData.append('lang', _getLang());
+
+        try {
+            const res = await fetch(`${_apiBase}/api/stt`, { method: 'POST', body: formData });
+            if (res.ok) {
+                const data = await res.json();
+                const text = data.text?.trim();
+                if (text && text.length > 0) {
+                    if (_subtitle) _subtitle.textContent = '';
+                    _onTranscript(text);
+                } else {
+                    if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+                }
+            } else if (res.status === 429) {
+                if (_subtitle) _subtitle.textContent = 'Ses servisi yoğun, lütfen tekrar konuşun.';
+                setTimeout(() => {
+                    if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+                }, 2000);
+            } else {
+                if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+            }
+        } catch (err) {
+            if (_subtitle) _subtitle.textContent = err.message?.includes('Failed to fetch')
+                ? 'Backend bağlantısı yok.'
+                : 'Sizi dinliyorum...';
+        }
+    };
+
+    try {
+        if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    } catch (_) {}
+}
+
+// ─── VAD ana döngüsü ──────────────────────────────────────────
+
+function vadLoop() {
+    if (!vadActive) return;
+
+    const volume = getMicVolume();
+    const threshold = elaIsSpeaking ? BARGE_IN_THRESHOLD : VAD_THRESHOLD;
+    const userIsTalking = volume > threshold;
+
+    if (userIsTalking) {
+        // Sessizlik sayacını iptal et
+        if (silenceTimer) {
+            clearTimeout(silenceTimer);
+            silenceTimer = null;
+        }
+
+        if (elaIsSpeaking) {
+            // ── BARGE-IN: Ela konuşurken kullanıcı konuştu ──
+            stopEla();
+            // Kayıt hemen başlasın, ilk kelime kaybolmasın
+            if (!isRecording) startVadRecording();
+        } else if (!isRecording) {
+            // Normal dinleme → kayıt başlat
+            startVadRecording();
+        }
+    } else {
+        // Sessizlik
+        if (isRecording && !silenceTimer) {
+            silenceTimer = setTimeout(() => {
+                silenceTimer = null;
+                stopVadRecording();
+            }, SILENCE_DURATION_MS);
+        }
+    }
+
+    vadRafId = requestAnimationFrame(vadLoop);
 }
 
 // ─── Base64 MP3 çalma ────────────────────────────────────────
 
 export async function playBase64Audio(base64Str) {
     if (!audioCtx) await initWebAudio();
+
+    // Yazı yazılıyorsa ses çalma
     const chatInput = document.getElementById('chat-input');
     if (chatInput?.value.trim().length > 0) return;
 
@@ -83,14 +237,14 @@ export async function playBase64Audio(base64Str) {
         const arrayBuffer = await res.arrayBuffer();
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-        stopAudio();
-        isSpeaking = true; // Ela konuşmaya başlıyor → VAD kayıt başlatmaz
+        stopEla(); // Önceki sesi durdur
 
         const source = audioCtx.createBufferSource();
         source.buffer = audioBuffer;
         _activeSource = source;
         setActiveSource(source);
         setSpeaking(true);
+        elaIsSpeaking = true;
 
         source.onended = () => {
             if (_activeSource === source) {
@@ -98,14 +252,16 @@ export async function playBase64Audio(base64Str) {
                 setActiveSource(null);
                 setSpeaking(false);
             }
-            isSpeaking = false; // Ela bitti → VAD tekrar dinleyebilir
+            elaIsSpeaking = false;
+            // Ela bitti → subtitle'ı sıfırla
+            if (_subtitle && vadActive) _subtitle.textContent = 'Sizi dinliyorum...';
         };
 
         source.connect(analyser);
         if (!isAudioMuted) analyser.connect(audioCtx.destination);
         source.start(0);
     } catch (e) {
-        isSpeaking = false;
+        elaIsSpeaking = false;
         setSpeaking(false);
         const subtitle = document.getElementById('subtitle');
         if (subtitle) subtitle.textContent = 'Ses çalınamadı.';
@@ -128,130 +284,23 @@ export function toggleMute(audioBtn) {
     }
 }
 
-// ─── VAD: Ses seviyesini ölç ──────────────────────────────────
+// ─── VAD Toggle ───────────────────────────────────────────────
 
-function getVolume() {
-    if (!micAnalyser || !micDataArray) return 0;
-    micAnalyser.getByteFrequencyData(micDataArray);
-    let sum = 0;
-    for (let i = 0; i < micDataArray.length; i++) sum += micDataArray[i];
-    return sum / micDataArray.length;
-}
-
-// ─── VAD: Kayıt başlat ────────────────────────────────────────
-
-function startVadRecording() {
-    if (isRecording || !micStream) return;
-    isRecording = true;
-    audioChunks = [];
-    speechStartTime = Date.now();
-
-    try {
-        const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-            ? { mimeType: 'audio/webm;codecs=opus' }
-            : { mimeType: 'audio/webm' };
-        mediaRecorder = new MediaRecorder(micStream, options);
-    } catch {
-        mediaRecorder = new MediaRecorder(micStream);
-    }
-
-    mediaRecorder.ondataavailable = e => {
-        if (e.data.size > 0) audioChunks.push(e.data);
-    };
-    mediaRecorder.start(100); // Her 100ms'de chunk gönder
-}
-
-// ─── VAD: Kayıt durdur ve STT'ye gönder ──────────────────────
-
-function stopVadRecording(onTranscript, apiBase, lang, subtitle) {
-    if (!isRecording || !mediaRecorder) return;
-    isRecording = false;
-
-    const elapsed = Date.now() - (speechStartTime || 0);
-
-    mediaRecorder.onstop = async () => {
-        if (elapsed < MIN_SPEECH_DURATION_MS) return; // Çok kısa → gürültü, atla
-
-        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
-        if (blob.size < 1000) return; // Boş blob
-
-        if (subtitle) subtitle.textContent = 'Anlıyorum...';
-
-        const formData = new FormData();
-        formData.append('file', blob, 'recording.webm');
-        formData.append('lang', lang());
-        try {
-            const res = await fetch(`${apiBase}/api/stt`, { method: 'POST', body: formData });
-            if (res.ok) {
-                const data = await res.json();
-                if (data.text?.trim().length > 0) {
-                    onTranscript(data.text);
-                    if (subtitle) subtitle.textContent = '';
-                } else {
-                    if (subtitle) subtitle.textContent = '';
-                }
-            } else if (res.status === 429) {
-                if (subtitle) subtitle.textContent = 'Ses servisi yoğun, biraz bekle.';
-            } else {
-                if (subtitle) subtitle.textContent = '';
-            }
-        } catch (err) {
-            if (subtitle) subtitle.textContent = err.message?.includes('Failed to fetch')
-                ? 'Backend bağlantısı yok.'
-                : '';
-        }
-    };
-
-    try {
-        if (mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-    } catch (_) {}
-}
-
-// ─── VAD: Ana döngü ───────────────────────────────────────────
-
-function vadLoop(onTranscript, apiBase, lang, subtitle, micBtn) {
-    if (!vadActive) return;
-
-    const volume = getVolume();
-    const speakingNow = volume > VAD_THRESHOLD;
-
-    if (speakingNow) {
-        // Sessizlik sayacını sıfırla
-        if (silenceTimer) {
-            clearTimeout(silenceTimer);
-            silenceTimer = null;
-        }
-        // Ela konuşmuyorsa ve kayıt başlamamışsa başlat
-        if (!isSpeaking && !isRecording) {
-            if (subtitle) subtitle.textContent = 'Dinliyorum...';
-            startVadRecording();
-        }
-    } else {
-        // Sessizlik: kayıt aktifse ve timer yoksa sayacı başlat
-        if (isRecording && !silenceTimer) {
-            silenceTimer = setTimeout(() => {
-                silenceTimer = null;
-                if (subtitle) subtitle.textContent = '';
-                stopVadRecording(onTranscript, apiBase, lang, subtitle);
-            }, SILENCE_DURATION_MS);
-        }
-    }
-
-    vadRafId = requestAnimationFrame(() =>
-        vadLoop(onTranscript, apiBase, lang, subtitle, micBtn)
-    );
-}
-
-// ─── VAD: Aç/Kapat (Toggle) ───────────────────────────────────
-
-export async function toggleVAD(micBtn, onTranscript, apiBase, lang, subtitle) {
+export async function toggleVAD(micBtn, onTranscript, apiBase, getLang, subtitle) {
     await initWebAudio();
 
+    // Geri çağırmaları kaydet
+    _onTranscript = onTranscript;
+    _apiBase      = apiBase;
+    _getLang      = getLang;
+    _subtitle     = subtitle;
+    _micBtn       = micBtn;
+
     if (vadActive) {
-        // ── VAD'ı kapat ──
+        // ── Kapat ──
         vadActive = false;
-        if (vadRafId) { cancelAnimationFrame(vadRafId); vadRafId = null; }
-        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+        if (vadRafId)    { cancelAnimationFrame(vadRafId); vadRafId = null; }
+        if (silenceTimer){ clearTimeout(silenceTimer); silenceTimer = null; }
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
             try { mediaRecorder.stop(); } catch (_) {}
         }
@@ -262,19 +311,22 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, lang, subtitle) {
         micAnalyser = null;
         micDataArray = null;
         isRecording = false;
+        elaIsSpeaking = false;
         setListening(false);
 
         micBtn.classList.remove('vad-active', 'recording');
         micBtn.title = 'Sesi etkinleştir';
         if (subtitle) subtitle.textContent = '';
     } else {
-        // ── VAD'ı aç ──
+        // ── Aç ──
         try {
             micStream = await navigator.mediaDevices.getUserMedia({
                 audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
+                    echoCancellation: true,   // Tarayıcı seviyesi eko iptal
+                    noiseSuppression: true,   // Arka plan gürültüsü azaltma
+                    autoGainControl: true,    // Otomatik kazanç → ses seviyesini normalize eder
                     sampleRate: 16000,
+                    channelCount: 1,
                 }
             });
         } catch {
@@ -282,14 +334,16 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, lang, subtitle) {
             return;
         }
 
-        // Mikrofona özel analyser (Ela sesinden bağımsız, sadece mic ölçmek için)
+        // Mikrofona özel ayrı analyser — Ela'nın analyser'ına bağlanmıyor
+        // → Ela'nın hoparlör sesi bu analyser'a karışmaz
         const micSource = audioCtx.createMediaStreamSource(micStream);
         micAnalyser = audioCtx.createAnalyser();
-        micAnalyser.fftSize = 512;
-        micAnalyser.smoothingTimeConstant = 0.3;
+        micAnalyser.fftSize = 1024; // Daha yüksek çözünürlük → frekans bandı daha hassas
+        micAnalyser.smoothingTimeConstant = 0.2; // Hızlı tepki
         micDataArray = new Uint8Array(micAnalyser.frequencyBinCount);
         micSource.connect(micAnalyser);
-        // Not: micAnalyser destination'a bağlamıyoruz → hoparlörden geri besleme olmaz
+        // ÖNEMLİ: micAnalyser → destination'a BAĞLANMIYOR
+        // Yani mikrofon sesi hoparlörden çıkmıyor → geri besleme yok
 
         vadActive = true;
         setListening(true);
@@ -298,11 +352,10 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, lang, subtitle) {
         micBtn.title = 'Dinlemeyi durdur';
         if (subtitle) subtitle.textContent = 'Sizi dinliyorum...';
 
-        vadLoop(onTranscript, apiBase, lang, subtitle, micBtn);
+        vadLoop();
     }
 }
 
-// ─── Eski basılı-tut API'si (artık kullanılmıyor, geriye dönük uyumluluk) ──
-
+// ─── Geriye dönük uyumluluk ──────────────────────────────────
 export function startRecording() {}
 export function stopRecording() {}

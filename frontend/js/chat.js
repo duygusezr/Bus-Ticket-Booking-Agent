@@ -24,8 +24,8 @@ export const SESSION_ID = crypto.randomUUID();
 
 // ─── UI referansları ──────────────────────────────────────────
 
-const subtitle  = document.getElementById('subtitle');
-const chatInput = document.getElementById('chat-input');
+const subtitle    = document.getElementById('subtitle');
+const chatInput   = document.getElementById('chat-input');
 const historyList = document.getElementById('history-list');
 
 // ─── Dil ─────────────────────────────────────────────────────
@@ -35,16 +35,16 @@ export const getLang = () => _currentLang;
 
 const translations = {
     tr: {
-        subtitle:  'Otobüs bileti Randevu AI Asistanı',
+        subtitle:    'Otobüs bileti Randevu AI Asistanı',
         placeholder: 'Bir mesaj yazın...',
-        welcome:   'Merhaba, ben Ela. Size en uygun otobüs biletini bulmam için nereden nereye ve hangi tarihte seyahat edeceğinizi söyler misiniz?',
-        thinking:  'Düşünüyor...',
+        welcome:     'Merhaba, ben Ela. Size en uygun otobüs biletini bulmam için nereden nereye ve hangi tarihte seyahat edeceğinizi söyler misiniz?',
+        thinking:    'Düşünüyor...',
     },
     en: {
-        subtitle:  'Bus Ticket Booking AI Assistant',
+        subtitle:    'Bus Ticket Booking AI Assistant',
         placeholder: 'Type a message...',
-        welcome:   "Hello, I'm Ela. Could you tell me where you are traveling from, your destination, and your travel dates so I can find the best bus ticket for you?",
-        thinking:  'Thinking...',
+        welcome:     "Hello, I'm Ela. Could you tell me where you are traveling from, your destination, and your travel dates so I can find the best bus ticket for you?",
+        thinking:    'Thinking...',
     },
 };
 
@@ -69,7 +69,7 @@ const chatHistory = [];
 
 /**
  * Kullanıcı veya asistan mesajını sohbet paneline ekle.
- * Kullanıcı girdisi textContent ile eklenir — XSS güvenli.
+ * textContent kullanılır — XSS güvenli.
  */
 export function addToHistoryPanel(role, text) {
     const item = document.createElement('div');
@@ -78,7 +78,7 @@ export function addToHistoryPanel(role, text) {
     if (role === 'user') {
         const content = document.createElement('div');
         content.className = 'content';
-        content.textContent = text.trim();  // XSS güvenli
+        content.textContent = text.trim();
         item.appendChild(content);
     } else {
         const bubble = document.createElement('div');
@@ -89,7 +89,7 @@ export function addToHistoryPanel(role, text) {
         img.className = 'avatar-icon';
         const content = document.createElement('div');
         content.className = 'content';
-        content.textContent = text.trim();  // XSS güvenli
+        content.textContent = text.trim();
         bubble.appendChild(img);
         bubble.appendChild(content);
         item.appendChild(bubble);
@@ -101,11 +101,11 @@ export function addToHistoryPanel(role, text) {
 
 // ─── WebSocket ────────────────────────────────────────────────
 
-let chatSocket = null;
+let chatSocket          = null;
 let currentFullResponse = '';
-let wsReconnectTimer = null;
-let isReconnecting = false;
-let isSending = false;
+let wsReconnectTimer    = null;
+let isReconnecting      = false;
+let isSending           = false;
 
 export function initWebSocket() {
     if (chatSocket && (
@@ -147,7 +147,6 @@ export function initWebSocket() {
                     currentAiBubble.appendChild(bubble);
                     historyList.appendChild(currentAiBubble);
                 }
-                // textContent — XSS güvenli
                 currentAiBubble.querySelector('.content').textContent = clean;
                 historyList.scrollTop = historyList.scrollHeight;
             }
@@ -186,6 +185,8 @@ export async function sendMessage() {
     if (!text) return;
 
     isSending = true;
+
+    // Ela'yı durdur — barge-in veya yazıyla gönderme fark etmez
     stopAudio();
     await initWebAudio();
 
