@@ -109,6 +109,14 @@ export function loadVRM(url, onProgress) {
                     cachedBones.upperChest = vrm.humanoid.getNormalizedBoneNode('upperChest');
                 }
                 if (vrm.lookAt) vrm.lookAt.autoUpdate = false;
+
+                // ─── Otomatik kamera hizalama ─────────────────────────────
+                // Her VRM modelinin kendi orijin noktası farklı olabiliyor.
+                // Bounding box hesaplayıp modelin baş üst noktasına göre
+                // kamerayı konumlandırıyoruz — hangi model yüklenirse yüklensin
+                // yüz/göğüs bölgesi ekranın ortasında görünür.
+                _fitCameraToVRM(vrm);
+
                 console.log('VRM başarıyla yüklendi:', url);
                 _startBlinking();
                 resolve();
@@ -122,6 +130,47 @@ export function loadVRM(url, onProgress) {
             }
         );
     });
+}
+
+// ─── Kamera otomatik hizalama ────────────────────────────────
+
+/**
+ * VRM modelinin bounding box'ını hesaplar, modeli X/Z ekseninde
+ * sahne merkezine taşır ve kamerayı göğüs/boyun hizasına konumlandırır.
+ * Böylece hangi model yüklenirse yüklensin tutarlı görünüm sağlanır.
+ */
+function _fitCameraToVRM(vrm) {
+    // Render'dan önce matris güncellemesi gerekli
+    vrm.scene.updateWorldMatrix(true, true);
+
+    const box = new THREE.Box3().setFromObject(vrm.scene);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    const modelHeight = size.y;        // Toplam boy (ayaktan başa)
+    const modelBottom = box.min.y;     // Ayak tabanı Y konumu
+
+    // Modeli X ve Z ekseninde ortala, Y'yi olduğu gibi bırak
+    vrm.scene.position.x = -center.x;
+    vrm.scene.position.z = -center.z;
+
+    // Kameranın baktığı Y noktası: ayak tabanından itibaren %70 yüksekliği
+    // (bu genelde boyun/göğüs bölgesidir — yüz ekranın üst yarısında kalır)
+    const targetY = modelBottom + modelHeight * 0.70;
+
+    // Kamera mesafesi: model boyuna göre ölçekle
+    // Daha uzun model → daha uzak kamera
+    const fovRad = camera.fov * (Math.PI / 180);
+    const desiredFrameHeight = modelHeight * 0.55;  // Görünmesini istediğimiz yükseklik
+    const distance = (desiredFrameHeight / 2) / Math.tan(fovRad / 2);
+    const camDist = Math.max(0.8, Math.min(distance, 3.0));  // 0.8–3.0 m arası sınırla
+
+    camera.position.set(0, targetY, camDist);
+    camera.lookAt(0, targetY, 0);
+
+    console.log(`[fitCamera] boy=${modelHeight.toFixed(2)}m, hedef Y=${targetY.toFixed(2)}, mesafe=${camDist.toFixed(2)}m`);
 }
 
 // İlk yükleme — her zaman varsayılan model (custom avatar sadece oturum içinde geçerli)
