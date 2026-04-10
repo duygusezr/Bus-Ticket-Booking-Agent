@@ -35,15 +35,15 @@ export const getLang = () => _currentLang;
 
 const translations = {
     tr: {
-        subtitle:    'Otobüs bileti Randevu AI Asistanı',
+        subtitle:    'Müşteri Asistanı',
         placeholder: 'Bir mesaj yazın...',
-        welcome:     'Merhaba, ben Ela. Size en uygun otobüs biletini bulmam için nereden nereye ve hangi tarihte seyahat edeceğinizi söyler misiniz?',
+        welcome:     'Merhaba! Size en uygun otobüs biletini bulmam için nereden nereye ve hangi tarihte seyahat edeceğinizi söyler misiniz?',
         thinking:    'Düşünüyor...',
     },
     en: {
-        subtitle:    'Bus Ticket Booking AI Assistant',
+        subtitle:    'Customer Assistant',
         placeholder: 'Type a message...',
-        welcome:     "Hello, I'm Ela. Could you tell me where you are traveling from, your destination, and your travel dates so I can find the best bus ticket for you?",
+        welcome:     "Hello! Could you tell me where you are traveling from, your destination, and your travel dates so I can find the best bus ticket for you?",
         thinking:    'Thinking...',
     },
 };
@@ -186,7 +186,7 @@ export async function sendMessage() {
 
     isSending = true;
 
-    // Ela'yı durdur — barge-in veya yazıyla gönderme fark etmez
+    // Avatar'ı durdur — barge-in veya yazıyla gönderme fark etmez
     stopAudio();
     await initWebAudio();
 
