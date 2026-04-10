@@ -156,16 +156,16 @@ function _fitCameraToVRM(vrm) {
     vrm.scene.position.x = -center.x;
     vrm.scene.position.z = -center.z;
 
-    // Kameranın baktığı Y noktası: ayak tabanından itibaren %70 yüksekliği
-    // (bu genelde boyun/göğüs bölgesidir — yüz ekranın üst yarısında kalır)
-    const targetY = modelBottom + modelHeight * 0.70;
+    // Kameranın baktığı Y noktası: ayak tabanından itibaren %58 yüksekliği
+    // (göğüs ortası — yüz ekranın üst bölümünde, gövde ortada)
+    const targetY = modelBottom + modelHeight * 0.58;
 
-    // Kamera mesafesi: model boyuna göre ölçekle
-    // Daha uzun model → daha uzak kamera
+    // Kamera mesafesi: çerçevelemek istediğimiz yükseklik oranı küçüldükçe kamera yaklaşır
+    // %40 → üst vücudu (bel–baş arası) yakın plan çerçeveler
     const fovRad = camera.fov * (Math.PI / 180);
-    const desiredFrameHeight = modelHeight * 0.55;  // Görünmesini istediğimiz yükseklik
+    const desiredFrameHeight = modelHeight * 0.40;
     const distance = (desiredFrameHeight / 2) / Math.tan(fovRad / 2);
-    const camDist = Math.max(0.8, Math.min(distance, 3.0));  // 0.8–3.0 m arası sınırla
+    const camDist = Math.max(0.6, Math.min(distance, 2.5));  // 0.6–2.5 m arası sınırla
 
     camera.position.set(0, targetY, camDist);
     camera.lookAt(0, targetY, 0);
