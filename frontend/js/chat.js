@@ -35,7 +35,7 @@ export const getLang = () => _currentLang;
 
 const translations = {
     tr: {
-        subtitle:    'Müşteri Asistanı',
+        subtitle:    'Otobüs bileti Randevu AI Asistanı',
         placeholder: 'Bir mesaj yazın...',
         welcome:     'Merhaba! Size en uygun otobüs biletini bulmam için nereden nereye ve hangi tarihte seyahat edeceğinizi söyler misiniz?',
         thinking:    'Düşünüyor...',
