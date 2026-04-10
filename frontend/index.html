@@ -98,6 +98,18 @@
                     <small>.vrm formatı desteklenir</small>
                     <input type="file" id="avatar-file-input" accept=".vrm" hidden>
                 </label>
+                <!-- Cinsiyet / Ses Seçimi -->
+                <div class="avatar-voice-section">
+                    <div class="avatar-voice-label"><i class="fa-solid fa-microphone"></i> Avatar Sesi</div>
+                    <div class="avatar-voice-options">
+                        <button class="avatar-voice-btn active" data-voice="default" id="voice-btn-female">
+                            <i class="fa-solid fa-venus"></i> Kadın
+                        </button>
+                        <button class="avatar-voice-btn" data-voice="male" id="voice-btn-male">
+                            <i class="fa-solid fa-mars"></i> Erkek
+                        </button>
+                    </div>
+                </div>
                 <div id="avatar-progress-wrap" class="avatar-progress-wrap" hidden>
                     <div class="avatar-progress-bar">
                         <div id="avatar-progress-fill" class="avatar-progress-fill"></div>

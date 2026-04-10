@@ -202,6 +202,7 @@ export async function sendMessage() {
         lang: _currentLang,
         history: chatHistory.slice(0, -1).slice(-10),
         session_id: SESSION_ID,
+        voice: localStorage.getItem('avatarVoice') || 'default',
     });
 
     if (chatSocket?.readyState === WebSocket.OPEN) {

@@ -162,11 +162,16 @@ async function _handleVRMFile(file) {
     }
 }
 
-// Modal açılınca adı güncelle
+// Modal açılınca adı ve aktif sesi güncelle
 avatarSettingsBtn?.addEventListener('click', () => {
     _updateAvatarNameDisplay();
     _setAvatarStatus('');
     if (avatarProgressWrap) avatarProgressWrap.hidden = true;
+    // Kaydetilmiş ses seçimini yansıt
+    const savedVoice = localStorage.getItem('avatarVoice') || 'default';
+    document.querySelectorAll('.avatar-voice-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.voice === savedVoice);
+    });
     if (avatarModal) avatarModal.hidden = false;
 });
 
@@ -192,6 +197,17 @@ avatarUploadLabel?.addEventListener('drop', e => {
     avatarUploadLabel.classList.remove('drag-over');
     const file = e.dataTransfer?.files?.[0];
     if (file) _handleVRMFile(file);
+});
+
+// Ses/Cinsiyet butonları
+document.querySelectorAll('.avatar-voice-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const voice = btn.dataset.voice;
+        localStorage.setItem('avatarVoice', voice);
+        document.querySelectorAll('.avatar-voice-btn').forEach(b =>
+            b.classList.toggle('active', b.dataset.voice === voice)
+        );
+    });
 });
 
 // Varsayılana dön

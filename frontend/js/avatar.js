@@ -179,11 +179,12 @@ function _fitCameraToVRM(vrm) {
     const targetY = headY - 0.18;
 
     // ── Kamera mesafesi ──────────────────────────────────────
-    // Modelin boyuyla orantılı, 1.2–2.2m arası
+    // Modelin boyuyla orantılı, 1.0–1.8m arası
+    // %45 → bel–baş arasını çerçeveler, bacaklar görünmez
     const fovRad = camera.fov * (Math.PI / 180);
-    const desiredFrameHeight = modelHeight * 0.60;
+    const desiredFrameHeight = modelHeight * 0.45;
     const distance = (desiredFrameHeight / 2) / Math.tan(fovRad / 2);
-    const camDist  = Math.max(1.2, Math.min(distance, 2.2));
+    const camDist  = Math.max(1.0, Math.min(distance, 1.8));
 
     camera.position.set(0, targetY, camDist);
     camera.lookAt(0, targetY, 0);

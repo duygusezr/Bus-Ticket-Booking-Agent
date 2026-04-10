@@ -75,6 +75,7 @@ async def websocket_chat(websocket: WebSocket):
             history = req.get("history", [])
             lang = req.get("lang") or settings.DEFAULT_LANG
             session_id = req.get("session_id", "default")
+            voice = req.get("voice", "default")  # "male" | "female" | "default"
 
             t0 = time.perf_counter()
             processed_text = preprocess_request(text, history, lang, session_id)
@@ -88,7 +89,7 @@ async def websocket_chat(websocket: WebSocket):
                 logger.info("WS LLM=%.3fs", time.perf_counter() - t_llm)
 
                 t_tts = time.perf_counter()
-                audio_base64 = await generate_tts(full_response.strip(), lang)
+                audio_base64 = await generate_tts(full_response.strip(), lang, voice)
                 logger.info(
                     "WS TTS=%.3fs TOTAL=%.3fs",
                     time.perf_counter() - t_tts,

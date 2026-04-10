@@ -13,9 +13,12 @@ _DELAY_RE = re.compile(r'<\|DELAY:.*?\|>')
 _MONEY_RE = re.compile(r'(\d[\d.\s]*(?:,\d{1,2})?)\s*TL\b', re.IGNORECASE)
 _INT_RE   = re.compile(r'\b\d+\b')
 
+# Dil + cinsiyet kombinasyonu için ses sözlüğü
 _VOICES = {
-    "tr": "tr-TR-EmelNeural",
-    "en": "en-US-AriaNeural",
+    "tr":        "tr-TR-EmelNeural",    # Türkçe kadın (varsayılan)
+    "tr_male":   "tr-TR-AhmetNeural",   # Türkçe erkek
+    "en":        "en-US-AriaNeural",    # İngilizce kadın (varsayılan)
+    "en_male":   "en-US-GuyNeural",     # İngilizce erkek
 }
 
 
@@ -78,9 +81,9 @@ def _prepare_tts_text(text: str) -> str:
 # Edge-TTS
 # ─────────────────────────────────────────────
 
-async def _edge_tts(text: str, lang: str) -> str:
+async def _edge_tts(text: str, lang: str, voice_key: str) -> str:
     """Synthesize via Edge-TTS with one retry on transient errors."""
-    voice = _VOICES.get(lang, _VOICES["tr"])
+    voice = _VOICES.get(voice_key, _VOICES.get(lang, _VOICES["tr"]))
     last_err: Exception | None = None
 
     for attempt in range(2):
@@ -113,11 +116,19 @@ async def generate_tts(text: str, lang: str | None = None, voice: str = "default
     Convert text to speech. Returns base64-encoded MP3 string.
     ACT/DELAY tokens are stripped before synthesis.
     Falls back to empty string on failure (non-fatal for callers).
+
+    voice: "male" | "female" | "default"
     """
     if not text or not text.strip():
         return ""
 
     lang = lang or settings.DEFAULT_LANG
+
+    # Cinsiyet+dil kombinasyonu anahtarı oluştur
+    if voice == "male":
+        voice_key = f"{lang}_male"
+    else:
+        voice_key = lang  # "tr" veya "en" — kadın sesi
 
     clean = _ACT_RE.sub("", text)
     clean = _DELAY_RE.sub("", clean).strip()
@@ -126,7 +137,7 @@ async def generate_tts(text: str, lang: str | None = None, voice: str = "default
         clean = _prepare_tts_text(clean)
 
     try:
-        return await _edge_tts(clean, lang)
+        return await _edge_tts(clean, lang, voice_key)
     except Exception as e:
         print(f"[TTS] Edge-TTS failed: {e}. Returning empty.")
         return ""
