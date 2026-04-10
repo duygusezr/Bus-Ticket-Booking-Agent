@@ -167,8 +167,9 @@ avatarSettingsBtn?.addEventListener('click', () => {
     _updateAvatarNameDisplay();
     _setAvatarStatus('');
     if (avatarProgressWrap) avatarProgressWrap.hidden = true;
-    // Kaydetilmiş ses seçimini yansıt
-    const savedVoice = localStorage.getItem('avatarVoice') || 'default';
+    // Ses hiç ayarlanmamışsa varsayılan = kadın (Ela.vrm için)
+    if (!localStorage.getItem('avatarVoice')) localStorage.setItem('avatarVoice', 'default');
+    const savedVoice = localStorage.getItem('avatarVoice');
     document.querySelectorAll('.avatar-voice-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.voice === savedVoice);
     });
@@ -214,6 +215,7 @@ document.querySelectorAll('.avatar-voice-btn').forEach(btn => {
 avatarResetBtn?.addEventListener('click', async () => {
     localStorage.removeItem('avatarUrl');
     localStorage.removeItem('avatarFileName');
+    localStorage.setItem('avatarVoice', 'default');  // Ela.vrm → her zaman kadın sesi
     _setAvatarStatus('');
     if (avatarProgressWrap) avatarProgressWrap.hidden = false;
     if (avatarProgressFill) avatarProgressFill.style.width = '0%';
