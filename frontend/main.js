@@ -8,6 +8,13 @@
  * toggle sistemiyle çalışır: bir kez tıkla → sürekli dinle.
  */
 import { loadVRM } from './js/avatar.js';   // Sahneyi başlatır ve animasyon döngüsünü çalıştırır
+
+// ─── Varsayılan ses garantisi ───────────────────────────────────────
+// Özel bir avatar yüklenmemişse (avatarFileName yoksa) ses her zaman
+// kadın (default) olmalıdır — Ela.vrm varsayılan kadın karakterdir.
+if (!localStorage.getItem('avatarFileName')) {
+    localStorage.setItem('avatarVoice', 'default');
+}
 import {
     initWebAudio,
     playBase64Audio,
