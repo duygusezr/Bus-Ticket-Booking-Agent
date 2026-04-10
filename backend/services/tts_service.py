@@ -8,10 +8,11 @@ from config import settings
 _TR_UNITS = ["sıfır", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"]
 _TR_TENS  = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"]
 
-_ACT_RE   = re.compile(r'<\|ACT:.*?\|>', re.DOTALL)
-_DELAY_RE = re.compile(r'<\|DELAY:.*?\|>')
-_MONEY_RE = re.compile(r'(\d[\d.\s]*(?:,\d{1,2})?)\s*TL\b', re.IGNORECASE)
-_INT_RE   = re.compile(r'\b\d+\b')
+_ACT_RE    = re.compile(r'<\|ACT:.*?\|>', re.DOTALL)
+_DELAY_RE  = re.compile(r'<\|DELAY:.*?\|>')
+_PAREN_RE  = re.compile(r'\(.*?\)')   # parantez içi — TTS'de okunmasın
+_MONEY_RE  = re.compile(r'(\d[\d.\s]*(?:,\d{1,2})?)\s*TL\b', re.IGNORECASE)
+_INT_RE    = re.compile(r'\b\d+\b')
 
 # Dil + cinsiyet kombinasyonu için ses sözlüğü
 _VOICES = {
@@ -131,7 +132,8 @@ async def generate_tts(text: str, lang: str | None = None, voice: str = "default
         voice_key = lang  # "tr" veya "en" — kadın sesi
 
     clean = _ACT_RE.sub("", text)
-    clean = _DELAY_RE.sub("", clean).strip()
+    clean = _DELAY_RE.sub("", clean)
+    clean = _PAREN_RE.sub("", clean).strip()  # (YYYY-AA-GG) gibi parantez içlerini atla
 
     if lang == "tr":
         clean = _prepare_tts_text(clean)
