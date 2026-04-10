@@ -59,41 +59,80 @@ export function setListening(v) { _isListening = v; }
 const loader = new GLTFLoader();
 loader.register(parser => new VRMLoaderPlugin(parser));
 
-loader.load(
-    './models/character.vrm',
-    gltf => {
-        const vrm = gltf.userData.vrm;
-        VRMUtils.removeUnnecessaryVertices(gltf.scene);
-        VRMUtils.removeUnnecessaryJoints(gltf.scene);
-        scene.add(vrm.scene);
-        currentVrm = vrm;
+/**
+ * Aktif avatar URL'ini döner.
+ * Kullanıcı özel bir VRM yüklediyse o kullanılır, yoksa varsayılan.
+ */
+export function getActiveAvatarUrl() {
+    // Blob URL kalıcı değil — initAvatar() bunu yönetir.
+    // Bu fonksiyon sadece isim göstermek için kullanılır.
+    const name = localStorage.getItem('avatarFileName');
+    return name ? `[custom: ${name}]` : './models/character.vrm';
+}
 
-        if (vrm.humanoid) {
-            const lua = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
-            const rua = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
-            if (lua) lua.rotation.z = -1.2;
-            if (rua) rua.rotation.z = 1.2;
-            const ls = vrm.humanoid.getNormalizedBoneNode('leftShoulder');
-            const rs = vrm.humanoid.getNormalizedBoneNode('rightShoulder');
-            if (ls) ls.rotation.z = -0.1;
-            if (rs) rs.rotation.z = 0.1;
-            cachedBones.head       = vrm.humanoid.getNormalizedBoneNode('head');
-            cachedBones.neck       = vrm.humanoid.getNormalizedBoneNode('neck');
-            cachedBones.spine      = vrm.humanoid.getNormalizedBoneNode('spine');
-            cachedBones.chest      = vrm.humanoid.getNormalizedBoneNode('chest');
-            cachedBones.upperChest = vrm.humanoid.getNormalizedBoneNode('upperChest');
+/**
+ * Mevcut VRM'i sahneden kaldırır ve yeni VRM'i yükler.
+ * @param {string} url - VRM dosyasının URL'i
+ * @param {function} [onProgress] - Yükleme ilerleme callback'i
+ * @returns {Promise<void>}
+ */
+export function loadVRM(url, onProgress) {
+    return new Promise((resolve, reject) => {
+        // Eski modeli temizle
+        if (currentVrm) {
+            scene.remove(currentVrm.scene);
+            VRMUtils.deepDispose(currentVrm.scene);
+            currentVrm = undefined;
+            Object.keys(cachedBones).forEach(k => cachedBones[k] = null);
         }
-        if (vrm.lookAt) vrm.lookAt.autoUpdate = false;
-        console.log('VRM başarıyla yüklendi!');
-        _startBlinking();
-    },
-    p => console.log('Yükleniyor...', (100 * p.loaded / p.total).toFixed(2), '%'),
-    err => {
-        console.error('VRM yükleme hatası:', err);
-        const sub = document.getElementById('subtitle');
-        if (sub) sub.textContent = "Model yüklenemedi. 'models/character.vrm' dosyasını koyun.";
-    }
-);
+        loader.load(
+            url,
+            gltf => {
+                const vrm = gltf.userData.vrm;
+                VRMUtils.removeUnnecessaryVertices(gltf.scene);
+                VRMUtils.removeUnnecessaryJoints(gltf.scene);
+                scene.add(vrm.scene);
+                currentVrm = vrm;
+                if (vrm.humanoid) {
+                    const lua = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+                    const rua = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+                    if (lua) lua.rotation.z = -1.2;
+                    if (rua) rua.rotation.z = 1.2;
+                    const ls = vrm.humanoid.getNormalizedBoneNode('leftShoulder');
+                    const rs = vrm.humanoid.getNormalizedBoneNode('rightShoulder');
+                    if (ls) ls.rotation.z = -0.1;
+                    if (rs) rs.rotation.z = 0.1;
+                    cachedBones.head       = vrm.humanoid.getNormalizedBoneNode('head');
+                    cachedBones.neck       = vrm.humanoid.getNormalizedBoneNode('neck');
+                    cachedBones.spine      = vrm.humanoid.getNormalizedBoneNode('spine');
+                    cachedBones.chest      = vrm.humanoid.getNormalizedBoneNode('chest');
+                    cachedBones.upperChest = vrm.humanoid.getNormalizedBoneNode('upperChest');
+                }
+                if (vrm.lookAt) vrm.lookAt.autoUpdate = false;
+                console.log('VRM başarıyla yüklendi:', url);
+                _startBlinking();
+                resolve();
+            },
+            p => {
+                if (onProgress) onProgress(p);
+            },
+            err => {
+                console.error('VRM yükleme hatası:', err);
+                reject(err);
+            }
+        );
+    });
+}
+
+// İlk yükleme — her zaman varsayılan model (custom avatar sadece oturum içinde geçerli)
+loadVRM('./models/character.vrm', p => {
+    console.log('Yükleniyor...', (100 * p.loaded / p.total).toFixed(2), '%');
+}).catch(() => {
+    const sub = document.getElementById('subtitle');
+    if (sub) sub.textContent = "Model yüklenemedi. 'models/character.vrm' dosyasını koyun.";
+});
+
+
 
 // ─── Göz kırpma ──────────────────────────────────────────────
 

@@ -520,3 +520,237 @@ canvas#canvas {
         font-size: 18px;
     }
 }
+
+/* ============================================================
+   AVATAR AYARLARI BUTONU & MODAL
+   ============================================================ */
+
+/* Avatar panelindeki ayarlar ikonu */
+.avatar-settings-btn {
+    position: absolute;
+    top: 25px;
+    left: 25px;
+    background: rgba(0, 0, 0, 0.3);
+    border: none;
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    font-size: 18px;
+    cursor: pointer;
+    z-index: 10;
+    backdrop-filter: blur(5px);
+    transition: background 0.2s, transform 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar-settings-btn:hover {
+    background: rgba(88, 40, 180, 0.7);
+    transform: rotate(20deg);
+}
+
+/* Modal arka plan katmanı */
+.avatar-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeInOverlay 0.2s ease;
+}
+
+.avatar-modal-overlay[hidden] {
+    display: none;
+}
+
+@keyframes fadeInOverlay {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* Modal kutusu */
+.avatar-modal-box {
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    width: 380px;
+    max-width: 92vw;
+    overflow: hidden;
+    animation: slideUpModal 0.25s cubic-bezier(.34,1.56,.64,1);
+}
+
+@keyframes slideUpModal {
+    from { transform: translateY(30px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* Modal başlık */
+.avatar-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 22px 14px;
+    background: linear-gradient(135deg, #5e35b1, #7c4dff);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+.avatar-modal-close {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: #fff;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.avatar-modal-close:hover {
+    background: rgba(255,255,255,0.4);
+}
+
+/* Modal gövde */
+.avatar-modal-body {
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Aktif avatar bilgisi */
+.avatar-current-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #166534;
+    font-weight: 600;
+}
+
+.avatar-current-info i {
+    color: #22c55e;
+    font-size: 15px;
+    flex-shrink: 0;
+}
+
+/* Yükleme alanı */
+.avatar-upload-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 24px 16px;
+    border: 2px dashed #c4b5fd;
+    border-radius: 12px;
+    cursor: pointer;
+    background: #faf5ff;
+    color: #6d28d9;
+    transition: border-color 0.2s, background 0.2s;
+    text-align: center;
+}
+
+.avatar-upload-label:hover,
+.avatar-upload-label.drag-over {
+    border-color: #7c4dff;
+    background: #f3e8ff;
+}
+
+.avatar-upload-label i {
+    font-size: 26px;
+    color: #7c4dff;
+}
+
+.avatar-upload-label span {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4c1d95;
+}
+
+.avatar-upload-label small {
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+/* Progress bar */
+.avatar-progress-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.avatar-progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #e9d5ff;
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.avatar-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #7c4dff, #a78bfa);
+    border-radius: 99px;
+    transition: width 0.3s ease;
+}
+
+.avatar-progress-wrap span {
+    font-size: 12px;
+    color: #6d28d9;
+    text-align: center;
+}
+
+/* Durum mesajı */
+.avatar-status {
+    font-size: 13px;
+    text-align: center;
+    min-height: 18px;
+    font-weight: 500;
+}
+
+.avatar-status.success { color: #16a34a; }
+.avatar-status.error   { color: #dc2626; }
+
+/* Alt buton grubu */
+.avatar-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.avatar-reset-btn {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #475569;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.avatar-reset-btn:hover {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-color: #fca5a5;
+}

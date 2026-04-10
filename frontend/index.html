@@ -65,6 +65,7 @@
                     <p id="ai-subtitle">Otobüs bileti Randevu AI Asistanı</p>
                 </div>
                 <button class="menu-icon" title="Menu"><i class="fa-solid fa-bars"></i></button>
+                <button class="avatar-settings-btn" id="avatar-settings-btn" title="Avatar Ayarları"><i class="fa-solid fa-sliders"></i></button>
                 <div class="canvas-container" id="canvas-container">
                     <canvas id="canvas"></canvas>
                 </div>
@@ -76,6 +77,39 @@
                 <button id="close-sidebar"></button>
                 <div id="history-sidebar"></div>
                 <button id="audio-btn"><i class="fa-solid fa-volume-high"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Avatar Ayarları Modal -->
+    <div id="avatar-modal" class="avatar-modal-overlay" hidden>
+        <div class="avatar-modal-box">
+            <div class="avatar-modal-header">
+                <span><i class="fa-solid fa-user-astronaut"></i> Avatar Ayarları</span>
+                <button id="avatar-modal-close" class="avatar-modal-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="avatar-modal-body">
+                <div class="avatar-current-info">
+                    <i class="fa-solid fa-circle-check"></i> <span id="avatar-current-name">Varsayılan avatar (character.vrm)</span>
+                </div>
+                <label class="avatar-upload-label" for="avatar-file-input">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <span>VRM dosyası seç veya sürükle bırak</span>
+                    <small>.vrm formatı desteklenir</small>
+                    <input type="file" id="avatar-file-input" accept=".vrm" hidden>
+                </label>
+                <div id="avatar-progress-wrap" class="avatar-progress-wrap" hidden>
+                    <div class="avatar-progress-bar">
+                        <div id="avatar-progress-fill" class="avatar-progress-fill"></div>
+                    </div>
+                    <span id="avatar-progress-text">Yükleniyor...</span>
+                </div>
+                <div id="avatar-status" class="avatar-status"></div>
+                <div class="avatar-modal-actions">
+                    <button id="avatar-reset-btn" class="avatar-reset-btn">
+                        <i class="fa-solid fa-rotate-left"></i> Varsayılana Dön
+                    </button>
+                </div>
             </div>
         </div>
     </div>
