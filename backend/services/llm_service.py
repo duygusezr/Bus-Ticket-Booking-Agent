@@ -129,38 +129,44 @@ async def generate_chat_response(
                     break
 
                 function_responses: list[types.Part] = []
-                for part in response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:  # type: ignore[index]
                     fn = part.function_call
                     if fn is None:
                         continue
 
-                    logger.info("Araç çağrısı: %s(%s)", fn.name, dict(fn.args))
+                    fn_name: str = fn.name or ""
+                    fn_args: dict[str, Any] = dict(fn.args) if fn.args is not None else {}
 
-                    if fn.name not in tools_map:
-                        logger.warning("Bilinmeyen araç: %s", fn.name)
+                    if not fn_name:
+                        continue
+
+                    logger.info("Araç çağrısı: %s(%s)", fn_name, fn_args)
+
+                    if fn_name not in tools_map:
+                        logger.warning("Bilinmeyen araç: %s", fn_name)
                         continue
 
                     try:
-                        result: ToolResult = await tools_map[fn.name](**fn.args) \
-                            if asyncio.iscoroutinefunction(tools_map[fn.name]) \
-                            else tools_map[fn.name](**fn.args)
+                        result: ToolResult = await tools_map[fn_name](**fn_args) \
+                            if asyncio.iscoroutinefunction(tools_map[fn_name]) \
+                            else tools_map[fn_name](**fn_args)
                     except Exception as tool_err:
-                        logger.exception("Araç çağrısı hatası [%s]: %s", fn.name, tool_err)
+                        logger.exception("Araç çağrısı hatası [%s]: %s", fn_name, tool_err)
                         result = ToolResult(message=f"Hata: {tool_err}", success=False)
 
-                    logger.info("Araç sonucu [%s]: %s", fn.name, result.message)
+                    logger.info("Araç sonucu [%s]: %s", fn_name, result.message)
 
                     # Oturum durumunu araç sonucuna göre güncelle
                     update_session_from_tool_result(
                         session_id=session_id,
-                        tool_name=fn.name,
-                        tool_args=dict(fn.args),
+                        tool_name=fn_name,
+                        tool_args=fn_args,
                         tool_result=result,
                     )
 
                     function_responses.append(
                         types.Part.from_function_response(
-                            name=fn.name, response={"result": result.message}
+                            name=fn_name, response={"result": result.message}
                         )
                     )
 

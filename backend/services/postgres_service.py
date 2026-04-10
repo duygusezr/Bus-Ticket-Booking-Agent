@@ -16,20 +16,20 @@ Bağımlılık: pip install asyncpg
 
 import logging
 import asyncio
-from typing import Optional
+from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
 
 # asyncpg opsiyonel — yoksa PostgreSQL devre dışı kalır
 try:
-    import asyncpg
+    import asyncpg  # type: ignore[import-untyped,import-not-found]
     HAS_ASYNCPG = True
 except ImportError:
     asyncpg = None  # type: ignore[assignment]
     HAS_ASYNCPG = False
     logger.info("asyncpg yüklü değil — PostgreSQL desteği devre dışı.")
 
-_pool: Optional["asyncpg.Pool"] = None  # type: ignore[name-defined]
+_pool: Optional[Any] = None  # asyncpg.Pool veya None
 
 
 async def init_postgres(database_url: Optional[str] = None) -> bool:
@@ -48,15 +48,14 @@ async def init_postgres(database_url: Optional[str] = None) -> bool:
         return False
 
     try:
-        _pool = await asyncpg.create_pool(
+        _pool = await asyncpg.create_pool(  # type: ignore[union-attr]
             database_url,
             min_size=1,
             max_size=5,
             command_timeout=10,
         )
 
-        async with _pool.acquire() as conn:
-            # Seferler tablosu
+        async with _pool.acquire() as conn:  # type: ignore[union-attr]
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS seferler (
                     id SERIAL PRIMARY KEY,

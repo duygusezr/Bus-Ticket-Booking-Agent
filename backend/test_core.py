@@ -204,7 +204,7 @@ import sqlite3
 def test_pnr_length_and_charset():
     conn = sqlite3.connect(":memory:")
     conn.execute("CREATE TABLE rezervasyonlar (pnr_code TEXT UNIQUE)")
-    pnr = _generate_unique_pnr(conn, table="rezervasyonlar", length=8)
+    pnr = _generate_unique_pnr(conn, length=8)
     assert len(pnr) == 8
     assert pnr.isalnum()
     assert pnr == pnr.upper()
@@ -216,7 +216,7 @@ def test_pnr_uniqueness():
     conn.execute("CREATE TABLE rezervasyonlar (pnr_code TEXT UNIQUE)")
     seen = set()
     for _ in range(50):
-        pnr = _generate_unique_pnr(conn, table="rezervasyonlar", length=8)
+        pnr = _generate_unique_pnr(conn, length=8)
         conn.execute("INSERT INTO rezervasyonlar VALUES (?)", (pnr,))
         conn.commit()
         assert pnr not in seen

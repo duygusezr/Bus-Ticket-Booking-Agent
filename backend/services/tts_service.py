@@ -92,8 +92,8 @@ async def _edge_tts(text: str, lang: str, voice_key: str) -> str:
             communicate = edge_tts.Communicate(text, voice)
             audio = bytearray()
             async for chunk in communicate.stream():
-                if chunk.get("type") == "audio" and chunk.get("data"):
-                    audio.extend(chunk["data"])
+                if chunk.get("type") == "audio" and chunk.get("data") is not None:
+                    audio.extend(chunk["data"])  # type: ignore[typeddict-item]
             if not audio:
                 raise RuntimeError("Edge-TTS returned empty audio.")
             return base64.b64encode(audio).decode()
