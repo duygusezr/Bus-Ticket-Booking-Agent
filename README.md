@@ -159,15 +159,15 @@ Gemini, projede **tek LLM** olarak çalışır ve şu görevlerin tamamını üs
 
 Türkçe sesli girişlerde STT çıktısı sıklıkla şu sorunları içerir:
 
-- Sayı kelimelerinin karışık formda gelmesi: *"beş yüz otuz yedi"* → `537`
-- Onluk-birlik parçalanması: *"altmış 1"* → `61`
-- E-posta adreslerinin sesli söylenmesi: *"duygu at gmail nokta com"* → `duygu@gmail.com`
+- Sayı kelimelerinin karışık formda gelmesi: *"beş yüz otuz dokuz"* → `539`
+- Onluk-birlik parçalanması: *"elli 1"* → `51`
+- E-posta adreslerinin sesli söylenmesi: *"fatma at gmail nokta com"* → `fatma@gmail.com`
 
 Bu sorunlar `stt_service.py` içindeki çok katmanlı normalizasyon pipeline'ı ile çözülür; sayı dönüşüm mantığı `number_utils.py`'dan import edilir:
 
 1. **Bağlam Tespiti:** Girdi e-posta mı, sayısal veri mi, yoksa doğal metin mi?
 2. **Türkçe Sayı Dönüşümü:** Yazıyla söylenen sayılar hane hane rakamlara çevrilir.
-3. **STT Parçalanma Tamiri:** `"60 1"` → `"61"` gibi bitişik olması gereken parçalar birleştirilir.
+3. **STT Parçalanma Tamiri:** `"50 1"` → `"51"` gibi bitişik olması gereken parçalar birleştirilir.
 4. **E-posta Normalizasyonu:** `"at"` → `@`, `"nokta"` → `.`, `"ci mail"` → `"gmail"` gibi sesli kalıplar düzeltilir.
 
 ---
