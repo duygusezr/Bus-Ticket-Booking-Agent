@@ -135,42 +135,65 @@ export function loadVRM(url, onProgress) {
 // ─── Kamera otomatik hizalama ────────────────────────────────
 
 /**
- * VRM modelinin bounding box'ını hesaplar, modeli X/Z ekseninde
- * sahne merkezine taşır ve kamerayı göğüs/boyun hizasına konumlandırır.
- * Böylece hangi model yüklenirse yüklensin tutarlı görünüm sağlanır.
+ * Head kemiğinin dünya pozisyonunu hedef alır — bounding box oranına
+ * bağlı kalmadan her modelde tutarlı "göğüs ortası" görünümü sağlar.
+ *
+ * Strateji:
+ *   1. Head kemiği world-space Y koordinatını al  → yüzün nerede olduğunu biliyoruz
+ *   2. Kamera o noktanın biraz altına (göğüs hizasına) baksın
+ *   3. Mesafeyi modelin toplam boyuna göre ölçekle — ne çok yakın ne çok uzak
  */
 function _fitCameraToVRM(vrm) {
-    // Render'dan önce matris güncellemesi gerekli
     vrm.scene.updateWorldMatrix(true, true);
 
+    // ── Bounding box: X/Z ortalama + toplam boy ──────────────
     const box = new THREE.Box3().setFromObject(vrm.scene);
-    const size = new THREE.Vector3();
+    const size   = new THREE.Vector3();
     const center = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(center);
 
-    const modelHeight = size.y;        // Toplam boy (ayaktan başa)
-    const modelBottom = box.min.y;     // Ayak tabanı Y konumu
+    const modelHeight = size.y;
 
-    // Modeli X ve Z ekseninde ortala, Y'yi olduğu gibi bırak
+    // Modeli yatayda ortala
     vrm.scene.position.x = -center.x;
     vrm.scene.position.z = -center.z;
 
-    // Kameranın baktığı Y noktası: ayak tabanından itibaren %58 yüksekliği
-    // (göğüs ortası — yüz ekranın üst bölümünde, gövde ortada)
-    const targetY = modelBottom + modelHeight * 0.58;
+    // ── Head kemiği world-Y koordinatı ──────────────────────
+    let headWorldY = null;
+    if (vrm.humanoid) {
+        const headBone = vrm.humanoid.getNormalizedBoneNode('head')
+                      ?? vrm.humanoid.getNormalizedBoneNode('neck');
+        if (headBone) {
+            const wp = new THREE.Vector3();
+            headBone.getWorldPosition(wp);
+            headWorldY = wp.y;
+        }
+    }
 
-    // Kamera mesafesi: çerçevelemek istediğimiz yükseklik oranı küçüldükçe kamera yaklaşır
-    // %40 → üst vücudu (bel–baş arası) yakın plan çerçeveler
+    // Head kemiği yoksa bounding box üst %85'ini kullan (fallback)
+    const headY = headWorldY ?? (box.min.y + modelHeight * 0.85);
+
+    // Kamera göğüs hizasına baksın: head'in 0.18m altı
+    // (bu sabit metre cinsinden — model boyuna bağımlı değil)
+    const targetY = headY - 0.18;
+
+    // ── Kamera mesafesi ──────────────────────────────────────
+    // Modelin boyuyla orantılı, 1.2–2.2m arası
     const fovRad = camera.fov * (Math.PI / 180);
-    const desiredFrameHeight = modelHeight * 0.40;
+    const desiredFrameHeight = modelHeight * 0.60;
     const distance = (desiredFrameHeight / 2) / Math.tan(fovRad / 2);
-    const camDist = Math.max(0.6, Math.min(distance, 2.5));  // 0.6–2.5 m arası sınırla
+    const camDist  = Math.max(1.2, Math.min(distance, 2.2));
 
     camera.position.set(0, targetY, camDist);
     camera.lookAt(0, targetY, 0);
 
-    console.log(`[fitCamera] boy=${modelHeight.toFixed(2)}m, hedef Y=${targetY.toFixed(2)}, mesafe=${camDist.toFixed(2)}m`);
+    console.log(
+        `[fitCamera] boy=${modelHeight.toFixed(2)}m`,
+        `headY=${headY.toFixed(2)}`,
+        `targetY=${targetY.toFixed(2)}`,
+        `mesafe=${camDist.toFixed(2)}m`
+    );
 }
 
 // İlk yükleme — her zaman varsayılan model (custom avatar sadece oturum içinde geçerli)
