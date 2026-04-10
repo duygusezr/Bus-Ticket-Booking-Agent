@@ -198,11 +198,11 @@ function _fitCameraToVRM(vrm) {
 }
 
 // İlk yükleme — her zaman varsayılan model (custom avatar sadece oturum içinde geçerli)
-loadVRM('./models/character.vrm', p => {
+loadVRM('./models/Ela.vrm', p => {
     console.log('Yükleniyor...', (100 * p.loaded / p.total).toFixed(2), '%');
 }).catch(() => {
     const sub = document.getElementById('subtitle');
-    if (sub) sub.textContent = "Model yüklenemedi. 'models/character.vrm' dosyasını koyun.";
+    if (sub) sub.textContent = "Model yüklenemedi. 'models/Ela.vrm' dosyasını koyun.";
 });
 
 

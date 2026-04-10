@@ -219,7 +219,7 @@ avatarResetBtn?.addEventListener('click', async () => {
     if (avatarProgressFill) avatarProgressFill.style.width = '0%';
     if (avatarProgressText) avatarProgressText.textContent = 'Yükleniyor...';
     try {
-        await loadVRM('./models/character.vrm', p => {
+        await loadVRM('./models/Ela.vrm', p => {
             const pct = p.total > 0 ? Math.round((p.loaded / p.total) * 100) : 0;
             if (avatarProgressFill) avatarProgressFill.style.width = pct + '%';
         });
