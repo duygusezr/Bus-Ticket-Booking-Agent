@@ -29,7 +29,7 @@ html {
     left: -20px;
     right: -20px;
     bottom: -20px;
-    background-image: url('./house_bg.jpg');
+    background-image: url('./arkaplan.jpeg');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -299,7 +299,7 @@ html {
 .avatar-panel {
     flex: 3.5;
     position: relative;
-    background-image: url('./house_bg.jpg');
+    background-image: url('./arkaplan.jpeg');
     background-size: cover;
     background-position: center;
     border-left: 1px solid #eee;
