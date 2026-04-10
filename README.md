@@ -1,4 +1,4 @@
-# 🚌 Ela — Yapay Zekâ Destekli Otobüs Bileti Rezervasyon Asistanı
+# 🚌 Müşteri Asistanı — Yapay Zekâ Destekli Otobüs Bileti Rezervasyon Sistemi
 
 > **Sesli ve yazılı etkileşim destekli, 3D avatarlı, uçtan uca akıllı otobüs bileti rezervasyon sistemi.**
 
@@ -6,13 +6,13 @@
 
 ## 📌 Projenin Amacı
 
-Bu proje, geleneksel web tabanlı otobüs bileti satın alma sürecini **yapay zekâ destekli bir konuşma arayüzüne** dönüştürmeyi amaçlamaktadır. Kullanıcı, ekrandaki 3D avatar (Ela) ile Türkçe ve İngilizce sesli veya yazılı olarak etkileşime girerek menülere, formlara veya karmaşık filtre panellerine ihtiyaç duymadan bilet rezervasyonu yapabilir.
+Bu proje, geleneksel web tabanlı otobüs bileti satın alma sürecini **yapay zekâ destekli bir konuşma arayüzüne** dönüştürmeyi amaçlamaktadır. Kullanıcı, ekrandaki 3D avatar ile Türkçe ve İngilizce sesli veya yazılı olarak etkileşime girerek menülere, formlara veya karmaşık filtre panellerine ihtiyaç duymadan bilet rezervasyonu yapabilir.
 
 ### Çözmek İstediğimiz Problem
 
 Mevcut otobüs bileti platformlarında kullanıcı, güzergah seçimi → tarih seçimi → koltuk seçimi → yolcu bilgileri → ödeme gibi çok adımlı bir form sürecinden geçmek zorundadır. Bu süreç özellikle yaşlı kullanıcılar, teknolojiye uzak bireyler veya hareket halindeki kullanıcılar için zorlu olabilmektedir.
 
-**Ela**, bu süreci doğal bir sohbete dönüştürür:
+**Müşteri Asistanı**, bu süreci doğal bir sohbete dönüştürür:
 
 - *"Yarın Ankara'dan İstanbul'a gitmek istiyorum"* → Sistem uygun seferleri otomatik bulur
 - *"5 numaralı koltuğu istiyorum"* → Koltuk uygunluğunu kontrol eder
@@ -206,16 +206,16 @@ Sistem, "basılı tut" (push-to-talk) yaklaşımı yerine **sürekli dinleme ve 
 | --- | --- |
 | Mikrofon butonu tıklandı | Mikrofon açılır, sürekli dinleme başlar (yeşil nabız animasyonu) |
 | Kullanıcı konuşmaya başladı | Ses seviyesi eşiği aşıldığında kayıt otomatik başlar |
-| Kullanıcı sustu (≥1000ms) | Kayıt durur, ses STT'ye gönderilir, Ela cevap verir |
-| Ela konuşurken kullanıcı konuştu | **Ela anında susar**, kayıt hemen başlar (barge-in) |
+| Kullanıcı sustu (≥1000ms) | Kayıt durur, ses STT'ye gönderilir, asistan cevap verir |
+| Avatar konuşurken kullanıcı konuştu | **Avatar anında susar**, kayıt hemen başlar (barge-in) |
 | Mikrofon butonu tekrar tıklandı | Mikrofon kapanır |
 
 ### Barge-In (Araya Girme)
 
-Ela konuşurken kullanıcı söz almak istediğinde sistem şu adımları izler:
+Avatar konuşurken kullanıcı söz almak istediğinde sistem şu adımları izler:
 
-1. `micAnalyser`, Ela'nın hoparlör sesinden **bağımsız** olarak yalnızca mikrofon girdisini ölçer — `destination`'a bağlanmadığı için hoparlörden geri besleme olmaz.
-2. Ses seviyesi `BARGE_IN_THRESHOLD` değerini aşarsa `stopEla()` çağrılır → Ela anında durur.
+1. `micAnalyser`, avatarın hoparlör sesinden **bağımsız** olarak yalnızca mikrofon girdisini ölçer — `destination`'a bağlanmadığı için hoparlörden geri besleme olmaz.
+2. Ses seviyesi `BARGE_IN_THRESHOLD` değerini aşarsa `stopAudio()` çağrılır → Avatar anında durur.
 3. Kayıt **aynı anda** başlatılır → kullanıcının ilk hecesi kaybolmaz.
 
 ### Eko Koruması
@@ -267,10 +267,10 @@ Tüm sabitleri `frontend/js/audio.js` başında değiştirebilirsiniz:
 
 | Bileşen | Dosya | Açıklama |
 | --- | --- | --- |
-| **3D Avatar** | `js/avatar.js` | Three.js + @pixiv/three-vrm. VRM 1.0 formatında 3D karakter modeli. Göz kırpma, nefes alma, kafa hareketi, lip-sync animasyonları. |
+| **3D Avatar** | `js/avatar.js` | Three.js + @pixiv/three-vrm. VRM 1.0 formatında 3D karakter modeli. Göz kırpma, nefes alma, kafa hareketi, lip-sync animasyonları. Dinamik VRM yükleme (`loadVRM`) ve otomatik kamera hizalama (`_fitCameraToVRM`) destekli. |
 | **Ses & VAD** | `js/audio.js` | Web Audio API tabanlı ses çalma, VAD döngüsü, barge-in, eko koruması, MediaRecorder kayıt yönetimi. |
 | **Sohbet** | `js/chat.js` | WebSocket bağlantısı, mesaj gönderme, streaming metin render, sohbet geçmişi UI, çok dilli destek. |
-| **Giriş Noktası** | `main.js` | Tüm modülleri birleştirir, UI olay dinleyicilerini bağlar. Mikrofon toggle → `toggleVAD()`. |
+| **Giriş Noktası** | `main.js` | Tüm modülleri birleştirir, UI olay dinleyicilerini bağlar. Mikrofon toggle → `toggleVAD()`. Avatar ayarları modal'ı (VRM yükleme, cinsiyet/ses seçimi). |
 | **Stiller** | `style.css` | Responsive tasarım + VAD animasyonları (yeşil nabız: `vad-active`, hızlı nabız: `vad-active.recording`). |
 
 ---
@@ -285,7 +285,7 @@ Sistem, Türkçe ve İngilizce olmak üzere iki dili tam olarak destekler. Dil s
 | --- | --- | --- |
 | **System Prompt** | `SYSTEM_PROMPT` (`config.py`) | `SYSTEM_PROMPT_EN` (`config.py`) |
 | **Dil kuralı** | `SADECE Türkçe cevap ver` | `Reply ONLY in English` |
-| **TTS sesi** | `tr-TR-EmelNeural` | `en-US-AriaNeural` |
+| **TTS sesi** | `tr-TR-EmelNeural` (Kadın) / `tr-TR-AhmetNeural` (Erkek) | `en-US-AriaNeural` (Kadın) / `en-US-GuyNeural` (Erkek) |
 | **STT talimatı** | Türkçe transkripsiyon yönergesi | İngilizce transkripsiyon yönergesi |
 | **Sistem enjeksiyonu** | `[SİSTEM BİLGİSİ: ...]` | `[SYSTEM INFORMATION: ...]` |
 | **Özet dili** | Türkçe | İngilizce (buffer'daki İngilizce kelimelerle otomatik tespit) |
@@ -310,8 +310,8 @@ Kullanıcı konuşur (VAD otomatik algılar)
     ▼
 [0] VAD Döngüsü (requestAnimationFrame)
     ├── Ses seviyesi > eşik → kayıt başlar
-    ├── Ela konuşuyorsa → eşik düşürülür (barge-in modu)
-    │   └── Kullanıcı ses çıkarırsa → Ela durur, kayıt anında başlar
+    ├── Avatar konuşuyorsa → eşik düşürülür (barge-in modu)
+    │   └── Kullanıcı ses çıkarırsa → Avatar durur, kayıt anında başlar
     └── Sessizlik ≥ 1000ms → kayıt biter, STT'ye gider
     │
     ▼
@@ -340,7 +340,7 @@ Kullanıcı konuşur (VAD otomatik algılar)
     │                                              │
     ▼ ◄──────────────────────────────────────────────
 [6] Frontend: Metin + Ses Güncelle
-    └── elaIsSpeaking = true → VAD barge-in moduna girer
+    └── avatarIsSpeaking = true → VAD barge-in moduna girer
 ```
 
 ### Rezervasyon Adımları
@@ -434,7 +434,7 @@ Bus Ticket Booking Agent/
 │   ├── main.js                 # Giriş noktası; UI olayları, VAD toggle bağlantısı
 │   ├── style.css               # Arayüz stilleri (VAD animasyonları dahil)
 │   ├── ela_avatar.png          # Chat baloncuğu avatar ikonu
-│   ├── house_bg.jpg            # Arka plan resmi
+│   ├── arkaplan.jpeg           # Arka plan resmi
 │   ├── js/
 │   │   ├── audio.js            # VAD, barge-in, eko koruması, ses çalma
 │   │   ├── avatar.js           # 3D avatar render, lip-sync, duygu sistemi

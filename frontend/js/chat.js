@@ -41,7 +41,7 @@ const translations = {
         thinking:    'Düşünüyor...',
     },
     en: {
-        subtitle:    'Customer Assistant',
+        subtitle:    'Bus Ticket Booking AI Assistant',
         placeholder: 'Type a message...',
         welcome:     "Hello! Could you tell me where you are traveling from, your destination, and your travel dates so I can find the best bus ticket for you?",
         thinking:    'Thinking...',
