@@ -176,7 +176,7 @@ function _fitCameraToVRM(vrm) {
 
     // Kamera göğüs hizasına baksın: head'in 0.18m altı
     // (bu sabit metre cinsinden — model boyuna bağımlı değil)
-    const targetY = headY - 0.32;
+    const targetY = headY - 0.05;
 
     // ── Kamera mesafesi ──────────────────────────────────────
     // Modelin boyuyla orantılı, 1.0–1.8m arası
