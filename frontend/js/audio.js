@@ -184,10 +184,11 @@ function stopVadRecording() {
             const res = await fetch(`${_apiBase}/api/stt`, { method: 'POST', body: formData });
             if (res.ok) {
                 const data = await res.json();
-                const text = data.text?.trim();
+                const text = data.text?.trim();         // normalize — backend'e gider
+                const display = (data.display_text?.trim()) || text; // ham — ekranda görünür
                 if (text && text.length > 0) {
                     if (_subtitle) _subtitle.textContent = '';
-                    _onTranscript(text);
+                    _onTranscript(text, display);
                 } else {
                     if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
                 }

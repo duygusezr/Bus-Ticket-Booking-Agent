@@ -1,5 +1,10 @@
 {
   "venvPath": "backend",
   "venv": "venv",
-  "extraPaths": ["backend"]
+  "pythonPath": "backend/venv/Scripts/python.exe",
+  "extraPaths": ["backend"],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none"
 }

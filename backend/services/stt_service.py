@@ -309,6 +309,8 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
         cleaned = _clean_asr_text(raw)
         result = _postprocess(cleaned, lang, last_assistant)
         print(f"[STT] raw={raw!r} → cleaned={cleaned!r} → final={result!r}")
-        return {"text": result, "lang": lang}
+        # display_text: kullanıcıya gösterilecek metin (ham transkript)
+        # text: backend'e gönderilecek normalize metin
+        return {"text": result, "display_text": cleaned, "lang": lang}
     except Exception as e:
         raise RuntimeError(f"STT başarısız: {e}") from e

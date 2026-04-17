@@ -77,10 +77,10 @@ micBtn?.addEventListener('click', async () => {
     await initWebAudio();
     await toggleVAD(
         micBtn,
-        // Transkript gelince input'a yaz ve gönder
-        text => {
-            if (chatInput) chatInput.value = text;
-            sendMessage();
+        // normalize metin backend'e, ham transkript ekranda görünsün
+        async (normalizedText, displayText) => {
+            if (chatInput) chatInput.value = normalizedText;
+            sendMessage(displayText);
         },
         API_BASE,
         getLang,

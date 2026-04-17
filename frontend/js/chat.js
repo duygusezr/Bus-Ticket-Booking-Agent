@@ -179,7 +179,7 @@ export function initWebSocket() {
 
 // ─── Mesaj gönderme ───────────────────────────────────────────
 
-export async function sendMessage() {
+export async function sendMessage(displayText = null) {
     if (isSending) return;
     const text = chatInput?.value.trim();
     if (!text) return;
@@ -190,15 +190,19 @@ export async function sendMessage() {
     stopAudio();
     await initWebAudio();
 
-    chatHistory.push({ role: 'user', content: text });
-    addToHistoryPanel('user', text);
+    // Backend'e normalize metin gider; ekranda görünen metin ayrı olabilir
+    const backendText  = text;
+    const panelText    = displayText || text;
+
+    chatHistory.push({ role: 'user', content: backendText });
+    addToHistoryPanel('user', panelText);
     if (chatInput) chatInput.value = '';
 
     if (subtitle) subtitle.textContent = translations[_currentLang].thinking;
     currentFullResponse = '';
 
     const payload = JSON.stringify({
-        text,
+        text: backendText,
         lang: _currentLang,
         history: chatHistory.slice(0, -1).slice(-10),
         session_id: SESSION_ID,
