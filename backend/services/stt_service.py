@@ -117,6 +117,17 @@ def _is_email_context(text: str) -> bool:
     return (at_words and (domain_hints or dot_hints)) or (domain_hints and dot_hints)
 
 
+def _is_name_context(history_last: str) -> bool:
+    """Asistan isim soruyorsa numeric normalizasyon yapma."""
+    name_keywords = [
+        # TR
+        "ad soyad", "isim", "adınız", "soyadınız", "ad ve soyad",
+        # EN
+        "full name", "your name", "passenger name", "name please", "name?",
+    ]
+    return any(kw in history_last for kw in name_keywords)
+
+
 def _is_numeric_context(text: str) -> bool:
     t = normalize_text(text)
     tokens = re.sub(r"[^a-z0-9\s]", " ", t).split()
@@ -242,8 +253,11 @@ _STT_INSTRUCTION_TR = (
     "Etiket veya yorum ekleme. Sadece duyduğun kelimeleri döndür. Ses yoksa boşluk döndür."
 )
 _STT_INSTRUCTION_EN = (
-    "You are a professional ASR specialist. Transcribe the audio accurately. "
-    "Do not add labels or explanations. Return only the spoken words. Empty string if silent."
+    "You are a professional ASR specialist. Transcribe the audio EXACTLY as spoken. "
+    "Do NOT translate, interpret, or convert. Return ONLY the spoken words verbatim. "
+    "If someone says a name like 'John Doe', write 'John Doe'. "
+    "If someone says digits like 'one two three', write '1 2 3'. "
+    "Empty string if silent."
 )
 
 
@@ -261,26 +275,28 @@ async def _gemini_transcribe(audio_bytes: bytes, mime_type: str, lang: str) -> s
     return transcript.replace("`", "").strip()
 
 
-def _postprocess(text: str, lang: str) -> str:
+def _postprocess(text: str, lang: str, last_assistant: str = "") -> str:
     """Apply context-aware normalization to raw transcript."""
     if _is_email_context(text):
         from services.tools import _normalize_email_input
         return _normalize_email_input(text)
 
+    # İsim bağlamında normalizasyon yapma — rakama çevirme
+    if _is_name_context(last_assistant.lower()):
+        return text
+
     if _is_numeric_context(text):
-        # EN için önce EN kelimelerini rakama çevir, sonra extract_digit_stream uygula
         if lang == "en":
             pre = _convert_en_numbers(text)
             digits = extract_digit_stream(pre)
             return digits if digits else pre
         return extract_digit_stream(text) or text
 
-    # Conversational text: replace number words with digits for readability
     normalized = _convert_tr_numbers(text) if lang == "tr" else _convert_en_numbers(text)
     return _collapse_numeric_sequences(normalized)
 
 
-async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settings.DEFAULT_LANG) -> dict:
+async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settings.DEFAULT_LANG, last_assistant: str = "") -> dict:
     """Transcribe audio via Gemini and apply post-processing."""
     if not audio_bytes:
         raise ValueError("Gönderilen ses verisi boş.")
@@ -291,7 +307,7 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
     try:
         raw = await _gemini_transcribe(audio_bytes, mime_type, lang)
         cleaned = _clean_asr_text(raw)
-        result = _postprocess(cleaned, lang)
+        result = _postprocess(cleaned, lang, last_assistant)
         print(f"[STT] raw={raw!r} → cleaned={cleaned!r} → final={result!r}")
         return {"text": result, "lang": lang}
     except Exception as e:

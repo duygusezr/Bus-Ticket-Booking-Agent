@@ -11,9 +11,14 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/api/stt")
-async def stt_endpoint(file: UploadFile = File(...), lang: str = Form(settings.DEFAULT_LANG)):
+async def stt_endpoint(
+    file: UploadFile = File(...),
+    lang: str = Form(settings.DEFAULT_LANG),
+    last_assistant: str = Form(""),
+):
     """
-    Kullanıcıdan gelen ses dosyasını (webm/wav/mp3) Gemini multimodal API üzerinden metne dönüştürür.
+    Kullanıcıdan gelen ses dosyasını Gemini multimodal API üzerinden metne dönüştürür.
+    last_assistant: Son asistan mesajı — bağlam tespiti için (isim/numara/e-posta).
     """
     try:
         audio_bytes = await file.read()
@@ -21,7 +26,7 @@ async def stt_endpoint(file: UploadFile = File(...), lang: str = Form(settings.D
         logger.info("STT isteği: %s byte, dosya=%s", len(audio_bytes), filename)
 
         t_start = time.perf_counter()
-        result = await transcribe_audio(audio_bytes, filename, lang)
+        result = await transcribe_audio(audio_bytes, filename, lang, last_assistant)
         logger.info("STT tamamlandı: %.3fs", time.perf_counter() - t_start)
 
         return result

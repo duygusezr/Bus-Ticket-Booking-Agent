@@ -174,6 +174,11 @@ function stopVadRecording() {
         const formData = new FormData();
         formData.append('file', blob, 'recording.webm');
         formData.append('lang', _getLang());
+        // Son asistan mesajını gönder — STT bağlam tespiti için (isim/sayı/e-posta)
+        const historyList = document.getElementById('history-list');
+        const aiItems = historyList?.querySelectorAll('.history-item.ai .content');
+        const lastAssistant = aiItems?.length ? aiItems[aiItems.length - 1].textContent : '';
+        formData.append('last_assistant', lastAssistant.slice(0, 300));
 
         try {
             const res = await fetch(`${_apiBase}/api/stt`, { method: 'POST', body: formData });
