@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import logging
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
 from services.tools import validate_seat_selection, validate_phone_number, validate_email_address
@@ -18,6 +19,110 @@ from services.session_state import get_session, build_truth_injection
 from services.types import ToolResult
 
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────
+# Doğal dil tarihi çözümleme
+# ─────────────────────────────────────────────
+
+_TR_MONTHS = {
+    "ocak": 1, "şubat": 2, "mart": 3, "nisan": 4,
+    "mayıs": 5, "may": 5, "haziran": 6, "temmuz": 7,
+    "ağustos": 8, "eylül": 9, "ekim": 10, "kasım": 11, "aralık": 12,
+}
+_EN_MONTHS = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2,
+    "march": 3, "mar": 3, "april": 4, "apr": 4,
+    "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "nov": 11,
+    "december": 12, "dec": 12,
+}
+_TR_DAYS = {
+    "bugün": 0, "bugun": 0,
+    "yarın": 1, "yarin": 1,
+    "öbür gün": 2, "obur gun": 2,
+}
+_EN_DAYS = {
+    "today": 0,
+    "tomorrow": 1,
+    "day after tomorrow": 2,
+}
+
+
+def _parse_natural_date(text: str, lang: str) -> Optional[str]:
+    """
+    'yarın', 'tomorrow', '8 ağustos', 'august 8th', 'july 1st', '1 temmuz'
+    gibi doğal dil ifadelerini YYYY-MM-DD formatına çevirir.
+    Bulamazsa None döner.
+    """
+    t = text.strip().lower()
+    today = datetime.now()
+
+    # Göreceli günler (yarın, tomorrow)
+    days_map = _TR_DAYS if lang == "tr" else _EN_DAYS
+    for phrase, delta in days_map.items():
+        if phrase in t:
+            return (today + timedelta(days=delta)).strftime("%Y-%m-%d")
+
+    # Ay isimleri
+    months_map = _TR_MONTHS if lang == "tr" else _EN_MONTHS
+
+    # "şubat 14", "temmuz 1", "ağustos 8" (TR: ay gün)
+    for month_name, month_num in months_map.items():
+        m = re.search(rf"\b{month_name}\b\s*(\d{{1,2}})", t)
+        if m:
+            day = int(m.group(1))
+            year = today.year if month_num >= today.month else today.year + 1
+            try:
+                return datetime(year, month_num, day).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+        # "14 şubat", "8 ağustos", "1st july", "8th august" (gün ay)
+        m = re.search(rf"(\d{{1,2}})(?:st|nd|rd|th)?\s*(?:of\s*)?\b{month_name}\b", t)
+        if m:
+            day = int(m.group(1))
+            year = today.year if month_num >= today.month else today.year + 1
+            try:
+                return datetime(year, month_num, day).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+    return None
+
+
+def _inject_date_if_needed(
+    text: str, history: List[Dict[str, str]], lang: str
+) -> str:
+    """
+    Asistan tarih istiyorsa ve kullanıcı doğal dil tarih girdiyse,
+    tarihi YYYY-MM-DD formatında metne ekler.
+    """
+    last = _last_assistant_text(history).lower()
+    date_keywords_tr = ["tarih", "hangi gün", "ne zaman", "yyyy-aa-gg", "yyyy-mm-dd"]
+    date_keywords_en = ["date", "when", "which day", "yyyy-mm-dd", "travel date"]
+    keywords = date_keywords_tr if lang == "tr" else date_keywords_en
+
+    if not any(kw in last for kw in keywords):
+        return text
+
+    # Zaten YYYY-MM-DD formatındaysa dokunma
+    if re.search(r"\d{4}-\d{2}-\d{2}", text):
+        return text
+
+    parsed = _parse_natural_date(text, lang)
+    # Hem TR hem EN ay adlarını dene (dil ne olursa olsun)
+    if not parsed:
+        other_lang = "en" if lang == "tr" else "tr"
+        parsed = _parse_natural_date(text, other_lang)
+
+    if parsed:
+        logger.info("Doğal tarih çözümlendi: %r → %s", text, parsed)
+        inject = f" [DATE_RESOLVED: {parsed}]" if lang == "en" else f" [TARİH_ALGILANDI: {parsed}]"
+        return text + inject
+
+    return text
 
 
 # ─────────────────────────────────────────────
@@ -172,6 +277,9 @@ def preprocess_request(
     seat_result = _try_seat_validation(text, history)
     phone_result = _try_phone_validation(text, history)
     email_result = _try_email_validation(text, history)
+
+    # Doğal dil tarihi çözümleme — "yarın", "8 ağustos", "july 1st" → YYYY-MM-DD
+    text = _inject_date_if_needed(text, history, lang)
 
     validation_injection = _build_validation_injection(
         lang, seat_result, phone_result, email_result, session_id

@@ -54,6 +54,20 @@ let _getLang      = null;
 let _subtitle     = null;
 let _micBtn       = null;
 
+// ─── Dile göre subtitle metni ───────────────────────────────
+
+function getSubtitleText(key) {
+    const lang = _getLang ? _getLang() : 'tr';
+    const texts = {
+        listening:  { tr: 'Sizi dinliyorum...', en: 'Listening...' },
+        recording:  { tr: 'Dinliyorum...',      en: 'Recording...' },
+        processing: { tr: 'Anlıyorum...',       en: 'Processing...' },
+        busy:       { tr: 'Ses servisi yoğun, lütfen tekrar konuşun.', en: 'Audio service busy, please try again.' },
+        noBackend:  { tr: 'Backend bağlantısı yok.', en: 'No backend connection.' },
+    };
+    return texts[key]?.[lang] ?? texts[key]?.tr ?? '';
+}
+
 // ─── WebAudio başlatma ────────────────────────────────────────
 
 export async function initWebAudio() {
@@ -126,7 +140,7 @@ function startVadRecording() {
     mediaRecorder.start(80); // 80ms chunk → düşük gecikme
 
     if (_micBtn) _micBtn.classList.add('recording');
-    if (_subtitle) _subtitle.textContent = 'Dinliyorum...';
+    if (_subtitle) _subtitle.textContent = getSubtitleText('recording');
 }
 
 // ─── VAD kaydını durdur ve STT'ye gönder ─────────────────────
@@ -140,19 +154,18 @@ function stopVadRecording() {
 
     mediaRecorder.onstop = async () => {
         if (elapsed < MIN_SPEECH_MS) {
-            // Çok kısa → gürültü
-            if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+            if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
             return;
         }
 
         const mimeType = mediaRecorder.mimeType || 'audio/webm';
         const blob = new Blob(audioChunks, { type: mimeType });
         if (blob.size < 200) {
-            if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+            if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
             return;
         }
 
-        if (_subtitle) _subtitle.textContent = 'Anlıyorum...';
+        if (_subtitle) _subtitle.textContent = getSubtitleText('processing');
 
         const formData = new FormData();
         formData.append('file', blob, 'recording.webm');
@@ -167,20 +180,20 @@ function stopVadRecording() {
                     if (_subtitle) _subtitle.textContent = '';
                     _onTranscript(text);
                 } else {
-                    if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+                    if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
                 }
             } else if (res.status === 429) {
-                if (_subtitle) _subtitle.textContent = 'Ses servisi yoğun, lütfen tekrar konuşun.';
+                if (_subtitle) _subtitle.textContent = getSubtitleText('busy');
                 setTimeout(() => {
-                    if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+                    if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
                 }, 2000);
             } else {
-                if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
+                if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
             }
         } catch (err) {
             if (_subtitle) _subtitle.textContent = err.message?.includes('Failed to fetch')
-                ? 'Backend bağlantısı yok.'
-                : 'Sizi dinliyorum...';
+                ? getSubtitleText('noBackend')
+                : getSubtitleText('listening');
         }
     };
 
@@ -269,7 +282,7 @@ export async function playBase64Audio(base64Str) {
             vadCooldownUntil = Date.now() + POST_SPEECH_COOLDOWN_MS;
             aboveThresholdFrames = 0;
             // Ela bitti → subtitle'ı sıfırla
-            if (_subtitle && vadActive) _subtitle.textContent = 'Sizi dinliyorum...';
+            if (_subtitle && vadActive) _subtitle.textContent = getSubtitleText('listening');
         };
 
         source.connect(analyser);
@@ -366,7 +379,7 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, getLang, subtitle
 
         micBtn.classList.add('vad-active');
         micBtn.title = 'Dinlemeyi durdur';
-        if (subtitle) subtitle.textContent = 'Sizi dinliyorum...';
+        if (subtitle) subtitle.textContent = getSubtitleText('listening');
 
         vadLoop();
     }
