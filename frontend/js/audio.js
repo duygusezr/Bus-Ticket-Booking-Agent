@@ -21,7 +21,7 @@ const VAD_THRESHOLD       = 25;   // Normal dinleme eşiği (yükseltildi: 15 �
 const BARGE_IN_THRESHOLD  = 18;   // Avatar konuşurken barge-in eşiği (yükseltildi: 12 → 18)
 const SILENCE_DURATION_MS = 1200; // Sessizlik süresi → kayıt biter (uzatıldı: 1000 → 1200ms)
 const MIN_SPEECH_MS       = 600;  // Daha kısa → gürültü, atla (uzatıldı: 300 → 600ms)
-const VAD_CONFIRM_FRAMES  = 4;    // Kayıt başlamadan önce kaç frame boyunca eşiği geçmeli
+const VAD_CONFIRM_FRAMES  = 1;    // Kayıt hemen başlasın — MIN_SPEECH_MS gürültüyü zaten filtreler
 const POST_SPEECH_COOLDOWN_MS = 800; // Avatar bittikten sonra VAD'nin bekleyeceği süre (ms)
 
 // ─── Modül durumu ─────────────────────────────────────────────
