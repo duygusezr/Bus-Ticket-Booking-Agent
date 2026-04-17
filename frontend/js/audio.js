@@ -20,7 +20,7 @@ import { setSpeaking, setListening, setActiveSource, setAnalyser, stopLipSync } 
 const VAD_THRESHOLD       = 25;   // Normal dinleme eşiği (yükseltildi: 15 → 25)
 const BARGE_IN_THRESHOLD  = 18;   // Avatar konuşurken barge-in eşiği (yükseltildi: 12 → 18)
 const SILENCE_DURATION_MS = 1200; // Sessizlik süresi → kayıt biter (uzatıldı: 1000 → 1200ms)
-const MIN_SPEECH_MS       = 600;  // Daha kısa → gürültü, atla (uzatıldı: 300 → 600ms)
+const MIN_SPEECH_MS       = 250;  // Kısa kelimeler kaybolmasın (600 → 250ms)
 const VAD_CONFIRM_FRAMES  = 1;    // Kayıt hemen başlasın — MIN_SPEECH_MS gürültüyü zaten filtreler
 const POST_SPEECH_COOLDOWN_MS = 800; // Avatar bittikten sonra VAD'nin bekleyeceği süre (ms)
 
@@ -147,7 +147,7 @@ function stopVadRecording() {
 
         const mimeType = mediaRecorder.mimeType || 'audio/webm';
         const blob = new Blob(audioChunks, { type: mimeType });
-        if (blob.size < 500) {
+        if (blob.size < 200) {
             if (_subtitle) _subtitle.textContent = 'Sizi dinliyorum...';
             return;
         }
