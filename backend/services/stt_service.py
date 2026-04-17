@@ -249,15 +249,18 @@ _MIME_MAP: dict[str, str] = {
 }
 
 _STT_INSTRUCTION_TR = (
-    "Sen bir ASR uzmanısın. TEK görevin ses dosyasını eksiksiz yazıya dökmektir. "
-    "Etiket veya yorum ekleme. Sadece duyduğun kelimeleri döndür. Ses yoksa boşluk döndür."
+    "Sen bir ASR uzmanısın. TEK görevin ses dosyasını Türkçe yazıya dökmektir. "
+    "Türkçe olmayan kelimeler duyarsan yine de en yakın Türkçe karşılığıyla yaz. "
+    "KESİNLİKLE başka dil kullanma, Hintçe/Arapça/Rusça vs. karakter yazma. "
+    "Etiket veya yorum ekleme. Sadece duyduğun kelimeleri döndür. Ses yoksa boş string döndür."
 )
 _STT_INSTRUCTION_EN = (
-    "You are a professional ASR specialist. Transcribe the audio EXACTLY as spoken. "
-    "Do NOT translate, interpret, or convert. Return ONLY the spoken words verbatim. "
-    "If someone says a name like 'John Doe', write 'John Doe'. "
-    "If someone says digits like 'one two three', write '1 2 3'. "
-    "Empty string if silent."
+    "You are a professional ASR specialist. Your ONLY job is to transcribe spoken English audio. "
+    "ALWAYS output Latin/English characters only. NEVER output Hindi, Arabic, Chinese, Cyrillic, or any non-Latin script. "
+    "If you hear a name like 'Archie River', write 'Archie River' exactly. "
+    "If you hear digits like 'one two three', write '1 2 3'. "
+    "Do NOT translate or interpret. Return ONLY the spoken words verbatim in English. "
+    "If the audio is silent or unclear, return an empty string."
 )
 
 
@@ -270,9 +273,18 @@ async def _gemini_transcribe(audio_bytes: bytes, mime_type: str, lang: str) -> s
         config=types.GenerateContentConfig(system_instruction=instruction, temperature=0.0),
     )
     transcript = (response.text or "").strip()
-    # Strip any residual labels
+    # Residual label temizle
     transcript = re.sub(r"^(Transcript|Transkripsiyon|Metin|Result|Sonuç):\s*", "", transcript, flags=re.IGNORECASE)
-    return transcript.replace("`", "").strip()
+    transcript = transcript.replace("`", "").strip()
+
+    # Güvenlik: Latin-dışı karakter oranı %30'dan fazlaysa boş döndür
+    # Hintce (ऀ-ॿ), Arapça (؀-ۿ), Kiril (Ѐ-ӿ), CJK (4E00-9FFF) vb.
+    non_latin = re.findall(r'[\u0900-\u097F\u0600-\u06FF\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]', transcript)
+    if transcript and len(non_latin) / max(len(transcript), 1) > 0.3:
+        print(f"[STT] Non-Latin karakter tespit edildi, transkript reddedildi: {transcript!r}")
+        return ""
+
+    return transcript
 
 
 def _postprocess(text: str, lang: str, last_assistant: str = "") -> str:
