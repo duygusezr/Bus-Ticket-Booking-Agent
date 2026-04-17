@@ -268,6 +268,11 @@ def _postprocess(text: str, lang: str) -> str:
         return _normalize_email_input(text)
 
     if _is_numeric_context(text):
+        # EN için önce EN kelimelerini rakama çevir, sonra extract_digit_stream uygula
+        if lang == "en":
+            pre = _convert_en_numbers(text)
+            digits = extract_digit_stream(pre)
+            return digits if digits else pre
         return extract_digit_stream(text) or text
 
     # Conversational text: replace number words with digits for readability
