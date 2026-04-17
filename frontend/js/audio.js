@@ -17,10 +17,11 @@
 import { setSpeaking, setListening, setActiveSource, setAnalyser, stopLipSync } from './avatar.js';
 
 // ─── Sabitler ─────────────────────────────────────────────────
-const VAD_THRESHOLD       = 15;   // Normal dinleme eşiği (0-255)
-const BARGE_IN_THRESHOLD  = 12;   // Ela konuşurken barge-in eşiği (daha hassas)
-const SILENCE_DURATION_MS = 1000; // Sessizlik süresi → kayıt biter
-const MIN_SPEECH_MS       = 300;  // Daha kısa → gürültü, atla
+const VAD_THRESHOLD       = 25;   // Normal dinleme eşiği (yükseltildi: 15 → 25)
+const BARGE_IN_THRESHOLD  = 18;   // Avatar konuşurken barge-in eşiği (yükseltildi: 12 → 18)
+const SILENCE_DURATION_MS = 1200; // Sessizlik süresi → kayıt biter (uzatıldı: 1000 → 1200ms)
+const MIN_SPEECH_MS       = 600;  // Daha kısa → gürültü, atla (uzatıldı: 300 → 600ms)
+const VAD_CONFIRM_FRAMES  = 4;    // Kayıt başlamadan önce kaç frame boyunca eşiği geçmeli
 
 // ─── Modül durumu ─────────────────────────────────────────────
 let audioCtx      = null;
@@ -42,6 +43,7 @@ let mediaRecorder  = null;
 let audioChunks    = [];
 let silenceTimer   = null;
 let speechStartTime = null;
+let aboveThresholdFrames = 0;  // Kaç frame boyunca eşiği aştık — anlık spike'ları filtreler
 
 // Geri çağırmalar (vadLoop'a parametre yerine modül düzeyinde saklanır)
 let _onTranscript = null;
@@ -195,22 +197,27 @@ function vadLoop() {
     const userIsTalking = volume > threshold;
 
     if (userIsTalking) {
+        aboveThresholdFrames++;
+
         // Sessizlik sayacını iptal et
         if (silenceTimer) {
             clearTimeout(silenceTimer);
             silenceTimer = null;
         }
 
-        if (elaIsSpeaking) {
-            // ── BARGE-IN: Ela konuşurken kullanıcı konuştu ──
+        // Barge-in: eşik 1 frame'de aşılırsa hemen durdur (kullanıcının ilk hecesi kaybolmasın)
+        if (elaIsSpeaking && aboveThresholdFrames >= 1) {
             stopEla();
-            // Kayıt hemen başlasın, ilk kelime kaybolmasın
             if (!isRecording) startVadRecording();
-        } else if (!isRecording) {
-            // Normal dinleme → kayıt başlat
+        } else if (!elaIsSpeaking && aboveThresholdFrames >= VAD_CONFIRM_FRAMES && !isRecording) {
+            // Normal dinleme: VAD_CONFIRM_FRAMES kadar sürekli ses gelirse başlat
+            // → Kapı çarpılması, öksürme, kısa gürültüler tetiklemiyor
             startVadRecording();
         }
     } else {
+        // Ses eşiğin altında — sayacı sıfırla
+        aboveThresholdFrames = 0;
+
         // Sessizlik
         if (isRecording && !silenceTimer) {
             silenceTimer = setTimeout(() => {
@@ -312,6 +319,7 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, getLang, subtitle
         micDataArray = null;
         isRecording = false;
         elaIsSpeaking = false;
+        aboveThresholdFrames = 0;
         setListening(false);
 
         micBtn.classList.remove('vad-active', 'recording');
