@@ -22,6 +22,7 @@ const BARGE_IN_THRESHOLD  = 18;   // Avatar konuşurken barge-in eşiği (yükse
 const SILENCE_DURATION_MS = 1200; // Sessizlik süresi → kayıt biter (uzatıldı: 1000 → 1200ms)
 const MIN_SPEECH_MS       = 600;  // Daha kısa → gürültü, atla (uzatıldı: 300 → 600ms)
 const VAD_CONFIRM_FRAMES  = 4;    // Kayıt başlamadan önce kaç frame boyunca eşiği geçmeli
+const POST_SPEECH_COOLDOWN_MS = 800; // Avatar bittikten sonra VAD'nin bekleyeceği süre (ms)
 
 // ─── Modül durumu ─────────────────────────────────────────────
 let audioCtx      = null;
@@ -44,6 +45,7 @@ let audioChunks    = [];
 let silenceTimer   = null;
 let speechStartTime = null;
 let aboveThresholdFrames = 0;  // Kaç frame boyunca eşiği aştık — anlık spike'ları filtreler
+let vadCooldownUntil = 0;      // Bu timestamp'e kadar VAD kayıt başlatmıyor (avatar sonrası cooldown)
 
 // Geri çağırmalar (vadLoop'a parametre yerine modül düzeyinde saklanır)
 let _onTranscript = null;
@@ -212,7 +214,10 @@ function vadLoop() {
         } else if (!elaIsSpeaking && aboveThresholdFrames >= VAD_CONFIRM_FRAMES && !isRecording) {
             // Normal dinleme: VAD_CONFIRM_FRAMES kadar sürekli ses gelirse başlat
             // → Kapı çarpılması, öksürme, kısa gürültüler tetiklemiyor
-            startVadRecording();
+            // → Avatar yeni bitmisse cooldown süresinde kayda başlatma
+            if (Date.now() > vadCooldownUntil) {
+                startVadRecording();
+            }
         }
     } else {
         // Ses eşiğin altında — sayacı sıfırla
@@ -260,6 +265,9 @@ export async function playBase64Audio(base64Str) {
                 setSpeaking(false);
             }
             elaIsSpeaking = false;
+            // Avatar bitti → cooldown başlat, ortam sesleri hemen tetiklemesin
+            vadCooldownUntil = Date.now() + POST_SPEECH_COOLDOWN_MS;
+            aboveThresholdFrames = 0;
             // Ela bitti → subtitle'ı sıfırla
             if (_subtitle && vadActive) _subtitle.textContent = 'Sizi dinliyorum...';
         };
