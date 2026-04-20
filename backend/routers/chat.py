@@ -98,6 +98,18 @@ async def websocket_chat(websocket: WebSocket):
 
                 await websocket.send_json({"type": "audio", "content": audio_base64})
                 await websocket.send_json({"type": "emotion", "content": "neutral"})
+
+                # Koltuk haritası popup tetikleyici
+                from services.session_state import get_session
+                sess = get_session(session_id)
+                if sess.seat_map_pending and sess.available_seats:
+                    await websocket.send_json({
+                        "type": "seat_map",
+                        "available_seats": sess.available_seats,
+                        "occupied_seats": sess.occupied_seats or "",
+                    })
+                    sess.seat_map_pending = False
+
                 await websocket.send_json({"type": "done"})
 
             except Exception as e:

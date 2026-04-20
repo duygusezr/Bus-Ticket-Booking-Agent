@@ -4,6 +4,7 @@
  * dil desteği.
  */
 import { playBase64Audio, stopAudio, initWebAudio } from './audio.js';
+import { showSeatMap } from './seatmap.js';
 
 // ─── Yapılandırma ─────────────────────────────────────────────
 
@@ -152,6 +153,17 @@ export function initWebSocket() {
             }
         } else if (data.type === 'audio') {
             await playBase64Audio(data.content);
+        } else if (data.type === 'seat_map') {
+            // Koltuk haritası popup'u göster
+            showSeatMap(
+                data.available_seats || '',
+                data.occupied_seats  || '',
+                (selectedSeat) => {
+                    // Kullanıcı koltuğu seçip onayladı: mesaj olarak gönder
+                    if (chatInput) chatInput.value = String(selectedSeat);
+                    sendMessage(`${selectedSeat} numaralı koltuğu seçiyorum`);
+                }
+            );
         } else if (data.type === 'done') {
             isSending = false;
             chatHistory.push({ role: 'assistant', content: currentFullResponse });

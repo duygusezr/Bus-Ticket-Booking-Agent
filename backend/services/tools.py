@@ -407,10 +407,25 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optio
                         f"- Sefer_ID: {row['id']}, Tarih: {row['travel_datetime']}, "
                         f"Tip: {row['bus_type']}, Fiyat: {row['price']} TL, Boş Koltuklar: {row['available_seats']}"
                     )
+                # Dolu koltukları da hesapla (koltuk haritası için)
+                try:
+                    with _db(REZ_DB_PATH) as rez_conn:
+                        rez_rows = rez_conn.execute(
+                            "SELECT seat_number FROM rezervasyonlar WHERE sefer_id = ? AND reservation_status = 'completed'",
+                            (first_id,)
+                        ).fetchall()
+                    occupied = [r["seat_number"] for r in rez_rows]
+                except Exception:
+                    occupied = []
                 return ToolResult(
                     message="\n".join(lines),
                     success=True,
-                    data={"sefer_ids": all_ids, "sefer_id": first_id},
+                    data={
+                        "sefer_ids": all_ids,
+                        "sefer_id": first_id,
+                        "available_seats": exact[0][0]["available_seats"],
+                        "occupied_seats": ",".join(occupied),
+                    },
                 )
 
             close = [(r, dt) for r, dt in future_rows if abs((dt - target_dt).days) <= 3]

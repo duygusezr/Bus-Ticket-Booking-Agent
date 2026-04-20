@@ -30,6 +30,10 @@ class BookingSession:
     validated_phone: Optional[str] = None
     validated_email: Optional[str] = None
     tc_verified: bool = False
+    # Koltuk haritası popup için
+    available_seats: Optional[str] = None
+    occupied_seats: Optional[str] = None
+    seat_map_pending: bool = False
 
 
 # Oturum deposu — tek process için yeterli.
@@ -72,6 +76,10 @@ def update_session_from_tool_result(
             session.travel_date = tool_args["travel_date"]
         if "sefer_id" in d:
             session.sefer_id = d["sefer_id"]
+        if "available_seats" in d:
+            session.available_seats = d["available_seats"]
+            session.occupied_seats = d.get("occupied_seats", "")
+            session.seat_map_pending = True
 
     elif tool_name == "validate_seat_selection":
         if "seat" in d:
