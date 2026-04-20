@@ -15,10 +15,13 @@ Mevcut otobüs bileti platformlarında kullanıcı, güzergah seçimi → tarih 
 **Müşteri Asistanı**, bu süreci doğal bir sohbete dönüştürür:
 
 - *"Yarın Ankara'dan İstanbul'a gitmek istiyorum"* → Sistem uygun seferleri otomatik bulur
-- *"5 numaralı koltuğu istiyorum"* → Koltuk uygunluğunu kontrol eder
-- *"TC'm 12345678910"* → Algoritmik doğrulamayı anında yapar
+- *"5 numaralı koltuğu istiyorum"* → Koltuk uygunluğunu kontrol eder (Dilerseniz ekrandaki interaktif koltuk haritası üzerinden de seçim yapabilirsiniz)
+- *"TC'm 12345678910"* → Algoritmik doğrulamayı ve gelişmiş sesli sayılarla TC normalizasyonunu anında yapar
+- **Görsel Arayüz (Soft UI):** Biletleme ve fatura paneli üzerinden şık ve net bir onay (ticket confirmation) ekranı sunar
+- **Kesintisiz İletişim (Barge-in):** Gelişmiş dip gürültü filtreleme teknolojisi sayesinde avatar konuşurken bile sözünü keserek (barge-in) akıcı bir diyalog kurabilirsiniz
 - **Çok Dilli Destek:** TR/EN butonları ile anında dil değiştirme (Sistemsel talimatlar ve onay mekanizmaları her iki dil için de tamamen optimize edilmiştir)
-- **Mobil Uyumlu:** Telefon ve tabletler için optimize edilmiş özel dikey görünüm ve akıllı klavye yönetimi
+- **Toplanmış Responsive Tasarım:** Chat ekranı, 3D avatar ve bilet paneli tüm mobil, tablet ve masaüstü çözünürlükleri için kusursuzca düzenlenir
+- **Stabil WebSocket Altyapısı:** Bağlantı kopmalarına ve anlık durumlara karşı bağlantı durumunu doğrulayan ve hata onarımı sağlayan kararlı bir mekanizma barındırır
 - Tüm bilgiler toplandığında özet sunar ve onay sonrası rezervasyonu tamamlar
 
 ---
@@ -220,11 +223,11 @@ Avatar konuşurken kullanıcı söz almak istediğinde sistem şu adımları izl
 
 ### Eko Koruması
 
-Tarayıcı seviyesinde `echoCancellation`, `noiseSuppression` ve `autoGainControl` etkin tutulur. Buna ek olarak mikrofon `AudioContext` içinde Ela'nın ses grafiğine hiç bağlanmaz; yalnızca ölçüm için ayrı bir `micAnalyser` düğümünden geçirilir.
+Tarayıcı seviyesinde `echoCancellation`, `noiseSuppression` ve `autoGainControl` etkin tutulur. Buna ek olarak mikrofon `AudioContext` içinde Avatarın ses grafiğine hiç bağlanmaz; yalnızca ölçüm için ayrı bir `micAnalyser` düğümünden geçirilir.
 
 ### Frekans Bandına Odaklanma
 
-Ses seviyesi hesaplanırken tüm frekans spektrumu yerine yalnızca **insan konuşma bandı (300 Hz – 3400 Hz)** kullanılır. Bu yaklaşım, Ela'nın hoparlörden sızan düşük frekanslı seslerinin ve ortam gürültüsünün yanlış kayıt tetiklemesini azaltır.
+Ses seviyesi hesaplanırken tüm frekans spektrumu yerine yalnızca **insan konuşma bandı (300 Hz – 3400 Hz)** kullanılır. Bu yaklaşım, Avatarın hoparlörden sızan düşük frekanslı seslerinin ve ortam gürültüsünün yanlış kayıt tetiklemesini azaltır.
 
 ### Eşik Değerleri ve Ayarlar
 
@@ -233,11 +236,11 @@ Tüm sabitleri `frontend/js/audio.js` başında değiştirebilirsiniz:
 | Sabit | Varsayılan | Açıklama |
 | --- | --- | --- |
 | `VAD_THRESHOLD` | `15` | Normal sessizlikte kayıt başlatma eşiği (0-255) |
-| `BARGE_IN_THRESHOLD` | `12` | Ela konuşurken barge-in eşiği (daha hassas) |
+| `BARGE_IN_THRESHOLD` | `12` | Avatar konuşurken barge-in eşiği (daha hassas) |
 | `SILENCE_DURATION_MS` | `1000` | Bu kadar sessizlik → kayıt biter, STT'ye gider |
 | `MIN_SPEECH_MS` | `300` | Daha kısa ses → gürültü olarak atlanır |
 
-> **İpucu:** Gürültülü bir ortamda kullanıyorsanız `VAD_THRESHOLD` ve `BARGE_IN_THRESHOLD` değerlerini 5-10 puan artırın. Ela çok erken kesiyorsa `SILENCE_DURATION_MS`'i 1300-1500'e çıkarın.
+> **İpucu:** Gürültülü bir ortamda kullanıyorsanız `VAD_THRESHOLD` ve `BARGE_IN_THRESHOLD` değerlerini 5-10 puan artırın. Avatar çok erken kesiyorsa `SILENCE_DURATION_MS`'i 1300-1500'e çıkarın.
 
 ---
 
@@ -433,7 +436,7 @@ Bus Ticket Booking Agent/
 │   ├── index.html              # Ana frontend sayfası
 │   ├── main.js                 # Giriş noktası; UI olayları, VAD toggle bağlantısı
 │   ├── style.css               # Arayüz stilleri (VAD animasyonları dahil)
-│   ├── ela_avatar.png          # Chat baloncuğu avatar ikonu
+│   ├── avatar.png              # Chat baloncuğu avatar ikonu
 │   ├── arkaplan.jpeg           # Arka plan resmi
 │   ├── js/
 │   │   ├── audio.js            # VAD, barge-in, eko koruması, ses çalma
