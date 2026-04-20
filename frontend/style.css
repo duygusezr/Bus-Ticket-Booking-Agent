@@ -808,283 +808,367 @@ canvas#canvas {
 }
 
 /* ============================================================
-   KOLTUK SEÇİM POPUP  —  Görseldeki düzen ile birebir
+   KOLTUK SEÇİM POPUP  —  Görseldeki düzen ile birebir (MODERN TASARIM)
    ============================================================ */
 
 /* Overlay */
 .seat-map-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(4px);
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(5px);
     z-index: 99999;
     display: flex;
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity 0.28s ease;
+    transition: opacity 0.3s ease;
 }
 
 .seat-map-overlay.visible { opacity: 1; }
 
-/* Ana kutu — yatay otobüs düzeni için geniş */
+/* Ana kutu */
 .seat-map-box {
-    background: #fff;
-    border-radius: 16px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.28);
-    width: 860px;
-    max-width: 97vw;
-    max-height: 92vh;
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.3);
+    width: 900px;
+    max-width: 95vw;
+    max-height: 90vh;
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    transform: translateY(24px);
-    transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
+    transform: translateY(30px);
+    transition: transform 0.35s cubic-bezier(.34,1.56,.64,1);
 }
 
 .seat-map-overlay.visible .seat-map-box { transform: translateY(0); }
 
 /* Başlık */
 .seat-map-header {
-    background: linear-gradient(135deg, #1b6ec2, #2196f3);
-    color: #fff;
-    padding: 14px 22px 12px;
+    background: #ffffff;
+    color: #333;
+    padding: 20px 24px 15px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
+    border-bottom: 1px solid #f0f0f0;
 }
 
 .smi-title {
-    font-size: 16px;
-    font-weight: 700;
+    font-size: 18px;
+    font-weight: 800;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    color: #2c3e50;
+}
+
+.smi-title i {
+    color: #3498db;
+    font-size: 20px;
 }
 
 .smi-sub {
-    font-size: 12px;
-    opacity: 0.8;
+    font-size: 13px;
+    color: #7f8c8d;
+    font-weight: 500;
 }
 
 /* Gövde */
 .seat-map-body {
-    padding: 16px 20px 8px;
+    padding: 25px 25px 15px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 20px;
+    background: #fdfdfd;
 }
 
 /* ─────────────────────────────────────────────
-   OTOİBÜS GÖVDESİ
+   OTOBÜS GÖVDESİ (YENİ TASARIM)
    ───────────────────────────────────────────── */
 
-/* Dış çerçeve: oval köşeli, açık gri zemin */
+/* Dış çerçeve: Otobüs şekli, sol kafa tam yuvarlak */
 .smi-bus-wrap {
-    background: #f0f4fa;
-    border: 2px solid #d0d8e8;
-    border-radius: 48px;
-    padding: 10px 18px 10px 12px;
+    background: #f4f6f8;
+    border: 1.5px solid #dcdcdc;
+    border-radius: 90px 15px 15px 90px;
+    padding: 24px 24px 24px 34px;
     overflow-x: auto;
+    box-shadow: inset 0 2px 10px rgba(0,0,0,0.02);
 }
 
-/* Grid: her satır bir flex container */
+/* Grid: every row wrapper */
 .smi-grid {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 6px;
     min-width: fit-content;
+    position: relative; /* For absolutely positioning the steering wheel */
+    padding-left: 10px; /* room for steering wheel overlap if needed */
 }
 
 /* Satır */
 .smi-row {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
 }
 
 /* Hizalama için sabit genişlikte boşluk hücresi */
 .smi-spacer {
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 48px;
     flex-shrink: 0;
 }
 
-/* Şoför alanı (sol baş) */
+/* Şoför alanı hizalaması (sol baş) */
 .smi-driver-spacer {
-    width: 44px;
+    width: 50px;
     flex-shrink: 0;
 }
 
 /* Sol-sağ bölüm arası görsel boşluk */
 .smi-section-gap {
-    width: 14px;
+    width: 32px;
     flex-shrink: 0;
 }
 
 /* ─── Ana koridor satırı ─── */
 .smi-corridor {
-    height: 22px;
+    height: 50px; /* Çok geniş orta koridor */
     gap: 0;
     align-items: center;
+    justify-content: center;
 }
 
+/* Şoför Kutusu (Sıfırdan tasarlandı, ikon olarak) */
 .smi-driver-box {
-    width: 44px;
-    height: 100%;
+    position: absolute;
+    left: 4px;
+    bottom: -2px; /* Alt koltuk hizasıyla denk */
+    width: 48px;
+    height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
-    color: #5a6882;
-    font-size: 22px;
+    z-index: 10;
+    background-image: url('data:image/svg+xml;utf8,<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="45" fill="none" stroke="%23c2c2c2" stroke-width="5"/><circle cx="50" cy="50" r="10" fill="none" stroke="%23c2c2c2" stroke-width="4"/><path d="M50 60 L50 95 M22 35 L42 45 M78 35 L58 45" stroke="%23c2c2c2" stroke-width="4"/></svg>');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
 }
 
+/* Varsayılan font-awesome ikonunu gizle */
+.smi-driver-box i {
+    display: none;
+}
+
+/* Ortadaki çizgi kalktı */
 .smi-corridor-line {
-    flex: 1;
-    height: 2px;
-    background: #c8d4e8;
-    border-radius: 2px;
+    display: none;
 }
 
 /* ─── Koltuk butonu ─── */
 .smi-seat {
-    width: 36px;
-    height: 36px;
-    border-radius: 7px 7px 5px 5px;
-    border: 1.5px solid transparent;
-    font-size: 10.5px;
-    font-weight: 700;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: transform 0.12s, box-shadow 0.12s;
+    position: relative;
+    isolation: isolate; /* Yaratılan katman sıralaması koruması (::after arkada kalacak) */
+    width: 38px;
+    height: 48px;
+    border-radius: 8px 8px 4px 4px;
+    border: 1px solid #d1d1d1;
+    background-color: #fff;
     display: flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: center;
+    padding-bottom: 6px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
     outline: none;
-    /* Koltuk üst kavis — arkalık simgesi */
-    box-shadow: inset 0 -3px 0 rgba(0,0,0,0.08);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.04);
 }
 
-/* Boş koltuk — açık mavi (görseldeki gibi) */
+/* İç Minder Alanı */
+.smi-seat::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    bottom: -1px; /* border-bottom gizlemek veya üzerine oturmak için */
+    left: 6px;
+    right: 6px;
+    top: 12px;
+    background: #ffffff; /* Minder hep beyaz */
+    border-radius: 4px 4px 0 0;
+    border-top: 1px solid #d1d1d1;
+    border-left: 1px solid #d1d1d1;
+    border-right: 1px solid #d1d1d1;
+}
+
+/* Boş Koltuk (Beyaz / Gri sınırlar) */
 .smi-seat.avail {
-    background: #daeaf8;
-    border-color: #a8cfed;
-    color: #1a6db5;
+    background-color: #ffffff;
+    border-color: #cccccc;
+    color: #666666;
 }
-
+.smi-seat.avail::after {
+    border-color: #cccccc;
+}
 .smi-seat.avail:hover {
-    background: #b8d8f2;
-    border-color: #2196f3;
-    transform: scale(1.12);
-    box-shadow: 0 3px 10px rgba(33,150,243,0.35), inset 0 -3px 0 rgba(0,0,0,0.08);
+    transform: translateY(-2px) scale(1.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    background-color: #fafcfe;
+    border-color: #3498db;
+    color: #3498db;
+}
+.smi-seat.avail:hover::after {
+    border-color: #3498db;
 }
 
-/* Dolu koltuk — açık gri */
+/* Dolu Koltuk (Pembe) */
 .smi-seat.occ {
-    background: #e8ecf0;
-    border-color: #c0c8d4;
-    color: #b0b8c4;
+    background-color: #ebbac0;
+    border-color: #c6979d;
+    color: #855259;
     cursor: not-allowed;
+    box-shadow: none;
+}
+.smi-seat.occ::after {
+    border-color: #c6979d;
 }
 
-/* Seçili koltuk — yeşil */
+/* Seçili Koltuk (Mavi) */
 .smi-seat.selected {
-    background: linear-gradient(160deg, #43c156, #2e9e44);
-    border-color: #1e7a33;
-    color: #fff;
-    transform: scale(1.14);
-    box-shadow: 0 4px 14px rgba(46,158,68,0.45), inset 0 -3px 0 rgba(0,0,0,0.12);
+    background-color: #a5d1f2;
+    border-color: #82b5df;
+    color: #2980b9;
+    transform: scale(1.08) translateY(-2px);
+    box-shadow: 0 6px 14px rgba(52, 152, 219, 0.3);
+}
+.smi-seat.selected::after {
+    border-color: #82b5df;
 }
 
 /* ─── Lejant ─── */
 .smi-legend {
     display: flex;
-    gap: 20px;
-    justify-content: flex-end;
-    padding-right: 4px;
+    gap: 24px;
+    justify-content: center;
+    padding-top: 10px;
     flex-wrap: wrap;
 }
 
 .smi-leg-item {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
+    gap: 8px;
+    font-size: 13px;
     color: #555;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .smi-leg-box {
+    position: relative;
+    isolation: isolate;
     width: 20px;
-    height: 20px;
-    border-radius: 5px;
-    border: 1.5px solid transparent;
-    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.08);
+    height: 26px;
+    border-radius: 4px 4px 2px 2px;
+    border: 1px solid #ccc;
+    background-color: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-.smi-avail { background: #daeaf8; border-color: #a8cfed; }
-.smi-occ   { background: #e8ecf0; border-color: #c0c8d4; }
-.smi-sel   { background: linear-gradient(160deg,#43c156,#2e9e44); border-color:#1e7a33; }
+.smi-leg-box::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    bottom: -1px;
+    left: 3px;
+    right: 3px;
+    top: 6px;
+    background: #fff;
+    border-radius: 2px 2px 0 0;
+    border-top: 1px solid #ccc;
+    border-left: 1px solid #ccc;
+    border-right: 1px solid #ccc;
+}
+
+.smi-avail { background-color: #ffffff; border-color: #cccccc; }
+.smi-avail::after { border-color: #cccccc; }
+.smi-occ { background-color: #ebbac0; border-color: #c6979d; }
+.smi-occ::after { border-color: #c6979d; }
+.smi-sel { background-color: #a5d1f2; border-color: #82b5df; }
+.smi-sel::after { border-color: #82b5df; }
 
 /* ─── Seçim bilgisi ─── */
 .seat-selection-info {
     text-align: center;
-    font-size: 13px;
-    font-weight: 600;
-    color: #1a6db5;
-    background: #e8f3fc;
-    border-radius: 9px;
-    padding: 9px 14px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #2980b9;
+    background: #eaf4fc;
+    border: 1px solid #d5e9f8;
+    border-radius: 12px;
+    padding: 12px 20px;
+    margin: 5px 0;
 }
 
 /* ─── Footer ─── */
 .seat-map-footer {
-    padding: 10px 20px 14px;
+    padding: 16px 24px;
     display: flex;
     justify-content: flex-end;
     border-top: 1px solid #f0f0f0;
     flex-shrink: 0;
+    background: #fdfdfd;
 }
 
 /* ─── Onayla butonu ─── */
 .seat-confirm-btn {
-    background: linear-gradient(135deg, #1b6ec2, #2196f3);
+    background: #3498db;
     color: #fff;
     border: none;
-    padding: 11px 26px;
-    border-radius: 10px;
-    font-size: 14px;
+    padding: 12px 28px;
+    border-radius: 12px;
+    font-size: 15px;
     font-weight: 700;
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 8px;
-    transition: all 0.2s;
-    box-shadow: 0 4px 14px rgba(27,110,194,0.4);
+    transition: all 0.25s;
+    box-shadow: 0 6px 16px rgba(52, 152, 219, 0.35);
 }
 
 .seat-confirm-btn:hover:not(.disabled) {
-    background: linear-gradient(135deg, #155a9e, #1b6ec2);
-    transform: translateY(-1px);
-    box-shadow: 0 6px 18px rgba(27,110,194,0.5);
+    background: #2980b9;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(52, 152, 219, 0.45);
 }
 
 .seat-confirm-btn.disabled {
-    background: #b0b8c4;
+    background: #bdc3c7;
     box-shadow: none;
     cursor: not-allowed;
     opacity: 0.7;
+    transform: none;
 }
 
 /* ─── Mobil uyum ─── */
 @media screen and (max-width: 640px) {
-    .seat-map-box   { border-radius: 12px; max-height: 96vh; }
-    .seat-map-body  { padding: 10px 10px 6px; }
-    .smi-seat       { width: 30px; height: 30px; font-size: 9px; }
-    .smi-spacer     { width: 30px; height: 30px; }
-    .smi-driver-spacer { width: 36px; }
-    .smi-driver-box { width: 36px; font-size: 18px; }
+    .seat-map-box   { border-radius: 16px; max-height: 96vh; }
+    .seat-map-body  { padding: 15px 12px 10px; }
+    .smi-seat       { width: 34px; height: 42px; font-size: 13px; padding-bottom: 4px; }
+    .smi-seat::after { top: 10px; left: 5px; right: 5px; }
+    .smi-spacer     { width: 34px; height: 42px; }
+    .smi-driver-spacer { width: 44px; }
+    .smi-driver-box { width: 40px; height: 40px; left: 2px; }
+    .smi-bus-wrap { padding: 15px 15px 15px 20px; border-radius: 60px 10px 10px 60px;}
+    .smi-section-gap { width: 20px; }
+    .smi-corridor { height: 40px; }
 }
+
