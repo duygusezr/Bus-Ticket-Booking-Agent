@@ -5,11 +5,13 @@ from typing import List, Dict, Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+from starlette.websockets import WebSocketState
 
 from config import settings
 from services.llm_service import generate_chat_response, generate_chat_response_stream
 from services.tts_service import generate_tts
 from services.preprocessing_service import preprocess_request
+from services.session_state import get_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -85,8 +87,15 @@ async def websocket_chat(websocket: WebSocket):
                 t_llm = time.perf_counter()
                 async for chunk in generate_chat_response_stream(processed_text, history, lang, session_id):
                     full_response += chunk
+                    if websocket.client_state != WebSocketState.CONNECTED:
+                        break
                     await websocket.send_json({"type": "text", "content": chunk})
                 logger.info("WS LLM=%.3fs", time.perf_counter() - t_llm)
+
+                # Bağlantı hâlâ açıksa devam et
+                if websocket.client_state != WebSocketState.CONNECTED:
+                    logger.warning("WS: istemci bağlantısı kapandı, yanıt gönderilmiyor.")
+                    continue
 
                 t_tts = time.perf_counter()
                 audio_base64 = await generate_tts(full_response.strip(), lang, voice)
@@ -100,7 +109,6 @@ async def websocket_chat(websocket: WebSocket):
                 await websocket.send_json({"type": "emotion", "content": "neutral"})
 
                 # Koltuk haritası popup tetikleyici
-                from services.session_state import get_session
                 sess = get_session(session_id)
                 if sess.seat_map_pending and sess.available_seats:
                     await websocket.send_json({
@@ -112,9 +120,14 @@ async def websocket_chat(websocket: WebSocket):
 
                 await websocket.send_json({"type": "done"})
 
+            except (WebSocketDisconnect, RuntimeError) as e:
+                logger.warning("WS: istemci mesaj işlenirken ayrıldı: %s", e)
             except Exception as e:
                 logger.exception("WS işlem hatası")
-                await websocket.send_json({"type": "error", "content": str(e)})
+                try:
+                    await websocket.send_json({"type": "error", "content": str(e)})
+                except Exception:
+                    pass
 
     except WebSocketDisconnect:
         pass
