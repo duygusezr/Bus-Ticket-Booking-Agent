@@ -4,7 +4,7 @@
  * dil desteği.
  */
 import { playBase64Audio, stopAudio, initWebAudio } from './audio.js';
-import { showSeatMap } from './seatmap.js';
+import { showSeatMap, trySelectSeatFromText } from './seatmap.js';
 
 // ─── Yapılandırma ─────────────────────────────────────────────
 
@@ -195,6 +195,10 @@ export async function sendMessage(displayText = null) {
     if (isSending) return;
     const text = chatInput?.value.trim();
     if (!text) return;
+
+    // Koltuk haritası popup'ı açıksa, metinde koltuk no varsa görsel seçimi yap
+    // (popup'ı kapatır; mesaj yine de backend'e gider)
+    trySelectSeatFromText(displayText || text);
 
     isSending = true;
 

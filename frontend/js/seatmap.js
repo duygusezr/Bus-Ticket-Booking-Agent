@@ -45,7 +45,44 @@ const COLS = [
 // Sütun 6 ile 10 arasına bölüm ayrımı eklemek için bu index'te görsel ara boşluk koyacağız
 const SECTION_GAP_AFTER = 6; // col 6'dan sonra görsel ara boşluk
 
-let _overlay = null;
+let _overlay     = null;
+let _availableSet = new Set();
+
+/**
+ * Popup açıkken gelen metinde koltuk numarası var mı diye kontrol eder.
+ * Varsa o koltuğu seçili (yeşil) gösterir ve ~700ms sonra popup'ı kapatır.
+ * @param {string} text  — Kullanıcının söylediği / yazdığı metin
+ * @returns {boolean}    — Koltuk bulunup seçildiyse true
+ */
+export function trySelectSeatFromText(text) {
+    if (!_overlay) return false;
+
+    // Metinden 1-2 basamaklı sayı çıkar
+    const match = String(text).match(/\b(\d{1,2})\b/);
+    if (!match) return false;
+    const num = parseInt(match[1]);
+    if (isNaN(num) || num < 1) return false;
+
+    // Sadece boş koltuklar seçilebilir
+    const btn = _overlay.querySelector(`.smi-seat[data-n="${num}"].avail`);
+    if (!btn) return false;
+
+    // Önceki seçimi temizle, yeniyi işaretle
+    _overlay.querySelectorAll('.smi-seat.selected').forEach(el => el.classList.remove('selected'));
+    btn.classList.add('selected');
+
+    // Bilgi metnini güncelle
+    const info = document.getElementById('smi-info');
+    if (info) info.textContent = `Seçilen koltuk: ${num}`;
+
+    // Onayla butonunu aktif et (görsel için)
+    const confirmBtn = document.getElementById('smi-confirm');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.classList.remove('disabled'); }
+
+    // Kısa bir süre seçimi göster, sonra kapat
+    setTimeout(() => _close(), 750);
+    return true;
+}
 
 /**
  * Koltuk seçim popup'ını göster.
@@ -57,7 +94,7 @@ export function showSeatMap(availableSeatsStr, occupiedSeatsStr, onConfirm) {
     if (_overlay) _overlay.remove();
 
     const availableSet = _parseSeats(availableSeatsStr);
-    // occupiedSet artık kullanılmıyor; 1-41 arasında available olmayan = dolu
+    _availableSet = availableSet; // trySelectSeatFromText için koru
     let selectedSeat = null;
 
     // ── Overlay ───────────────────────────────────────────────
