@@ -1,25 +1,32 @@
 /**
  * js/audio.js
  *
- * VAD sistemi — barge-in destekli.
+ * VAD sistemi — gelişmiş barge-in destekli.
+ *
  * Eşikler:
  *  VAD_THRESHOLD            — Normal dinleme eşiği
- *  BARGE_IN_THRESHOLD       — Avatar konuşurken barge-in eşiği
+ *  BARGE_IN_BASE            — Barge-in minimum eşiği (mutlak alt sınır)
+ *  BARGE_IN_SPIKE_DELTA     — Noise floor üzerinde kaç birim yükselmeli
+ *  NOISE_FLOOR_SAMPLES      — Noise floor için ortalaması alınacak frame sayısı
  *  SILENCE_DURATION_MS      — Normal sessizlik toleransı
  *  SILENCE_DURATION_NUMERIC — TC/telefon bağlamında uzatılmış tolerans
  *  MIN_SPEECH_MS            — Daha kısa ses → gürültü, atla
  *  POST_SPEECH_COOLDOWN_MS  — Avatar bittikten sonra VAD bekleme süresi
+ *  ELA_SPEAKING_LINGER_MS   — Ses parçaları arası boşlukta elaIsSpeaking'i koru
  */
 import { setSpeaking, setListening, setActiveSource, setAnalyser, stopLipSync } from './avatar.js';
 
 // ─── Sabitler ─────────────────────────────────────────────────
-const VAD_THRESHOLD            = 25;
-const BARGE_IN_THRESHOLD       = 18;
+const VAD_THRESHOLD            = 20;   // Normal dinleme eşiği (eski: 25)
+const BARGE_IN_BASE            = 8;    // Mutlak minimum barge-in eşiği (eski: 18)
+const BARGE_IN_SPIKE_DELTA     = 12;   // Noise floor + bu değer = dinamik eşik
+const NOISE_FLOOR_SAMPLES      = 40;   // Kaç frame'in ortalaması noise floor
 const SILENCE_DURATION_MS      = 1200;
-const SILENCE_DURATION_NUMERIC = 2500; // TC/telefon rakamları söylenirken uzun bekle
-const MIN_SPEECH_MS            = 250;
+const SILENCE_DURATION_NUMERIC = 2500;
+const MIN_SPEECH_MS            = 200;  // Biraz daha kısa (eski: 250)
 const VAD_CONFIRM_FRAMES       = 1;
-const POST_SPEECH_COOLDOWN_MS  = 800;
+const POST_SPEECH_COOLDOWN_MS  = 600;  // Biraz kısaltıldı (eski: 800)
+const ELA_SPEAKING_LINGER_MS   = 300;  // Ses parçaları arası geçişte bekleme
 
 // ─── Modül durumu ─────────────────────────────────────────────
 let audioCtx      = null;
@@ -28,6 +35,12 @@ let dataArray     = null;
 let isAudioMuted  = false;
 let _activeSource = null;
 let elaIsSpeaking = false;
+let _elaLingerTimer = null;  // ses parçaları arası geçiş zamanlayıcısı
+let _activeAudioCount = 0;   // aynı anda kaç ses parçası oynatılıyor
+
+// Noise floor (AI konuşurken ortam sesi tabanı)
+let _noiseFloorSamples = [];
+let _noiseFloor        = 0;
 
 // VAD
 let vadActive            = false;
@@ -65,7 +78,6 @@ function getSubtitleText(key) {
 }
 
 // ─── Numeric context tespiti ──────────────────────────────────
-// TC / telefon rakamları söylenirken sessizlik toleransını uzatır.
 
 function _isNumericContext() {
     const historyList = document.getElementById('history-list');
@@ -109,6 +121,26 @@ function getMicVolume() {
     return sum / (highBin - lowBin + 1);
 }
 
+// ─── Noise floor güncelle (AI konuşurken) ─────────────────────
+// AI hoparlörden konuşurken mikrofona sızan sesi ölç.
+// Kullanıcının sesi bu tabandan belirgin şekilde yüksek olmalı.
+
+function _updateNoiseFloor(volume) {
+    _noiseFloorSamples.push(volume);
+    if (_noiseFloorSamples.length > NOISE_FLOOR_SAMPLES) _noiseFloorSamples.shift();
+    _noiseFloor = _noiseFloorSamples.reduce((a, b) => a + b, 0) / _noiseFloorSamples.length;
+}
+
+function _resetNoiseFloor() {
+    _noiseFloorSamples = [];
+    _noiseFloor = 0;
+}
+
+// Dinamik barge-in eşiği: noise floor + spike delta, en az BARGE_IN_BASE
+function _bargeInThreshold() {
+    return Math.max(BARGE_IN_BASE, _noiseFloor + BARGE_IN_SPIKE_DELTA);
+}
+
 // ─── Avatar'ı durdur (barge-in) ───────────────────────────────
 
 function stopEla() {
@@ -119,10 +151,30 @@ function stopEla() {
     }
     setSpeaking(false);
     stopLipSync();
+    _activeAudioCount = 0;
     elaIsSpeaking = false;
+    if (_elaLingerTimer) { clearTimeout(_elaLingerTimer); _elaLingerTimer = null; }
+    _resetNoiseFloor();
 }
 
 export function stopAudio() { stopEla(); }
+
+// ─── AI konuşma durumunu güvenli şekilde kapat ────────────────
+// Ses parçaları arası geçişte hemen false yapmaz; kısa süre bekler.
+
+function _scheduleElaEnd() {
+    if (_elaLingerTimer) { clearTimeout(_elaLingerTimer); }
+    _elaLingerTimer = setTimeout(() => {
+        _elaLingerTimer = null;
+        if (_activeAudioCount <= 0) {
+            elaIsSpeaking = false;
+            _resetNoiseFloor();
+            vadCooldownUntil = Date.now() + POST_SPEECH_COOLDOWN_MS;
+            aboveThresholdFrames = 0;
+            if (_subtitle && vadActive) _subtitle.textContent = getSubtitleText('listening');
+        }
+    }, ELA_SPEAKING_LINGER_MS);
+}
 
 // ─── VAD kaydını başlat ───────────────────────────────────────
 
@@ -174,7 +226,6 @@ function stopVadRecording() {
         const formData = new FormData();
         formData.append('file', blob, 'recording.webm');
         formData.append('lang', _getLang());
-        // Son asistan mesajını gönder — STT bağlam tespiti için (isim/sayı/e-posta)
         const historyList = document.getElementById('history-list');
         const aiItems = historyList?.querySelectorAll('.history-item.ai .content');
         const lastAssistant = aiItems?.length ? aiItems[aiItems.length - 1].textContent : '';
@@ -184,8 +235,8 @@ function stopVadRecording() {
             const res = await fetch(`${_apiBase}/api/stt`, { method: 'POST', body: formData });
             if (res.ok) {
                 const data = await res.json();
-                const text = data.text?.trim();         // normalize — backend'e gider
-                const display = (data.display_text?.trim()) || text; // ham — ekranda görünür
+                const text = data.text?.trim();
+                const display = (data.display_text?.trim()) || text;
                 if (text && text.length > 0) {
                     if (_subtitle) _subtitle.textContent = '';
                     _onTranscript(text, display);
@@ -213,37 +264,58 @@ function stopVadRecording() {
 function vadLoop() {
     if (!vadActive) return;
 
-    const volume      = getMicVolume();
-    const threshold   = elaIsSpeaking ? BARGE_IN_THRESHOLD : VAD_THRESHOLD;
-    const userTalking = volume > threshold;
-
-    // TC/telefon bağlamında sessizlik toleransını uzat
+    const volume    = getMicVolume();
     const silenceDuration = _isNumericContext()
         ? SILENCE_DURATION_NUMERIC
         : SILENCE_DURATION_MS;
 
-    if (userTalking) {
-        aboveThresholdFrames++;
+    if (elaIsSpeaking) {
+        // ── AI konuşuyor: noise floor takibi + dinamik barge-in ──
+        _updateNoiseFloor(volume);
 
-        if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+        const threshold  = _bargeInThreshold();
+        const userTalking = volume > threshold;
 
-        if (elaIsSpeaking && aboveThresholdFrames >= 1) {
-            // Barge-in
-            stopEla();
-            if (!isRecording) startVadRecording();
-        } else if (!elaIsSpeaking && aboveThresholdFrames >= VAD_CONFIRM_FRAMES && !isRecording) {
-            if (Date.now() > vadCooldownUntil) {
-                startVadRecording();
+        if (userTalking) {
+            aboveThresholdFrames++;
+            if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+
+            if (aboveThresholdFrames >= 2) {
+                // Barge-in: AI'yı durdur, kullanıcıyı kaydet
+                stopEla();
+                vadCooldownUntil = 0; // barge-in sonrası cooldown yok
+                if (!isRecording) startVadRecording();
+            }
+        } else {
+            // Kullanıcı konuşmuyor ama AI konuşuyor — kayıt varsa sessizlik sayacı
+            if (isRecording && !silenceTimer) {
+                silenceTimer = setTimeout(() => {
+                    silenceTimer = null;
+                    stopVadRecording();
+                }, silenceDuration);
             }
         }
     } else {
-        aboveThresholdFrames = 0;
+        // ── Normal mod: kullanıcı konuşuyor mu? ──────────────────
+        const userTalking = volume > VAD_THRESHOLD;
 
-        if (isRecording && !silenceTimer) {
-            silenceTimer = setTimeout(() => {
-                silenceTimer = null;
-                stopVadRecording();
-            }, silenceDuration);
+        if (userTalking) {
+            aboveThresholdFrames++;
+            if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+
+            if (aboveThresholdFrames >= VAD_CONFIRM_FRAMES && !isRecording) {
+                if (Date.now() > vadCooldownUntil) {
+                    startVadRecording();
+                }
+            }
+        } else {
+            aboveThresholdFrames = 0;
+            if (isRecording && !silenceTimer) {
+                silenceTimer = setTimeout(() => {
+                    silenceTimer = null;
+                    stopVadRecording();
+                }, silenceDuration);
+            }
         }
     }
 
@@ -263,32 +335,45 @@ export async function playBase64Audio(base64Str) {
         const arrayBuffer = await res.arrayBuffer();
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 
-        stopEla();
+        // Önceki ses parçasını durdur (yeni gelen öncelikli)
+        if (_activeSource) {
+            try { _activeSource.stop(); } catch (_) {}
+            _activeSource = null;
+            setActiveSource(null);
+        }
+
+        // Linger timer varsa iptal et — hâlâ konuşuyoruz
+        if (_elaLingerTimer) { clearTimeout(_elaLingerTimer); _elaLingerTimer = null; }
 
         const source = audioCtx.createBufferSource();
         source.buffer = audioBuffer;
         _activeSource = source;
         setActiveSource(source);
         setSpeaking(true);
+
+        // Sayaç artır
+        _activeAudioCount++;
         elaIsSpeaking = true;
 
         source.onended = () => {
+            _activeAudioCount = Math.max(0, _activeAudioCount - 1);
+
             if (_activeSource === source) {
                 _activeSource = null;
                 setActiveSource(null);
                 setSpeaking(false);
             }
-            elaIsSpeaking = false;
-            vadCooldownUntil = Date.now() + POST_SPEECH_COOLDOWN_MS;
-            aboveThresholdFrames = 0;
-            if (_subtitle && vadActive) _subtitle.textContent = getSubtitleText('listening');
+
+            // Ses parçaları arası kısa boşlukta elaIsSpeaking'i hemen false yapma
+            _scheduleElaEnd();
         };
 
         source.connect(analyser);
         if (!isAudioMuted) analyser.connect(audioCtx.destination);
         source.start(0);
     } catch (e) {
-        elaIsSpeaking = false;
+        _activeAudioCount = Math.max(0, _activeAudioCount - 1);
+        elaIsSpeaking = _activeAudioCount > 0;
         setSpeaking(false);
         const subtitle = document.getElementById('subtitle');
         if (subtitle) subtitle.textContent = 'Ses çalınamadı.';
@@ -326,6 +411,7 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, getLang, subtitle
         vadActive = false;
         if (vadRafId)     { cancelAnimationFrame(vadRafId); vadRafId = null; }
         if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+        if (_elaLingerTimer) { clearTimeout(_elaLingerTimer); _elaLingerTimer = null; }
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
             try { mediaRecorder.stop(); } catch (_) {}
         }
@@ -334,7 +420,9 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, getLang, subtitle
         micDataArray         = null;
         isRecording          = false;
         elaIsSpeaking        = false;
+        _activeAudioCount    = 0;
         aboveThresholdFrames = 0;
+        _resetNoiseFloor();
         setListening(false);
 
         micBtn.classList.remove('vad-active', 'recording');
