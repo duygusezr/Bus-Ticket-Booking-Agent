@@ -197,8 +197,8 @@ export async function sendMessage(displayText = null) {
     if (!text) return;
 
     // Koltuk haritası popup'ı açıksa, metinde koltuk no varsa görsel seçimi yap
-    // (popup'ı kapatır; mesaj yine de backend'e gider)
-    trySelectSeatFromText(displayText || text);
+    // Normalize edilmiş 'text' kullanılır (sesli girişte displayText Türkçe kelime olabilir)
+    trySelectSeatFromText(text);
 
     isSending = true;
 

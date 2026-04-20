@@ -71,16 +71,20 @@ export function trySelectSeatFromText(text) {
     _overlay.querySelectorAll('.smi-seat.selected').forEach(el => el.classList.remove('selected'));
     btn.classList.add('selected');
 
-    // Bilgi metnini güncelle
+    // Bilgi kutusunu "Onaylandı!" olarak güncelle ve yeşile dönüştür
     const info = document.getElementById('smi-info');
-    if (info) info.textContent = `Seçilen koltuk: ${num}`;
+    if (info) {
+        info.textContent = `✓ ${num} numaralı koltuk onaylandı!`;
+        info.style.background = '#d4f4da';
+        info.style.color      = '#1a7a30';
+    }
 
     // Onayla butonunu aktif et (görsel için)
     const confirmBtn = document.getElementById('smi-confirm');
     if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.classList.remove('disabled'); }
 
-    // Kısa bir süre seçimi göster, sonra kapat
-    setTimeout(() => _close(), 750);
+    // Kısa bir süre onaylandı mesajını göster, sonra popup'ı kapat
+    setTimeout(() => _close(), 900);
     return true;
 }
 
