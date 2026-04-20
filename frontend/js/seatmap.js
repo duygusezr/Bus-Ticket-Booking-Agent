@@ -1,253 +1,266 @@
 /**
  * js/seatmap.js
- * Koltuk seçim popup modülü.
- * Görseldeki gibi otobüs içini gösterir; boş/dolu koltuklara renk verir.
- * Kullanıcı koltuk seçip "Onayla ve Devam Et" butonuna basınca onConfirm(seatNo) çağrılır.
+ * Koltuk seçim popup — görseldeki düzenle birebir eşleşir.
+ *
+ * Otobüs düzeni (önden arkaya, yatay görünüm):
+ *   ─────────────────────────────────────────────────────────
+ *   [3][6][9][12][15][18]  [23]          [26][29][32][35][38][40]
+ *   [2][5][8][11][14][17]  [22]          [25][28][31][34][37][39]
+ *   ═══════════════════════════════════════════════════════════ ← Ana koridor
+ *   [1][4][7][10][13][16]  [19][20][21]  [24][27][30][33][36]   [41]
+ *   ─────────────────────────────────────────────────────────
+ *
+ * Sütun yapısı (17 sütun, 41 koltuk):
+ *   Col 0-5 : Sol bölüm (koltuk üçlüsü: pencere+koridor+alt)
+ *   Col 6   : Geçiş sütunu (23,22 üstte; altta yok — giriş kapısı)
+ *   Col 7-9 : Giriş koltukları (19,20,21 altta; üstte yok)
+ *   Col 10-14: Sağ bölüm ana (üçlüler)
+ *   Col 15  : Sağ bölüm son üst çifti (40,39; altta yok)
+ *   Col 16  : Arka köşe (41 altta; üstte yok)
  */
 
-// ─── Otobüs koltuk düzeni (standart Türk şehirlerarası otobüs, 41 koltuk) ────
-// 2+2 dizilim, 10 sıra + arka 1 koltuk
-// Her satır: [solPencere, solKoridur, null=koridor, sağKoridur, sağPencere]
-// null = aisle (koridor boşluğu)
-const BUS_ROWS = [
-    // [sol-pencere, sol-koridor, SAĞ-koridor, sağ-pencere]
-    [1,  2,  3,  4],
-    [5,  6,  7,  8],
-    [9,  10, 11, 12],
-    [13, 14, 15, 16],
-    [17, 18, 19, 20],
-    [21, 22, 23, 24],
-    [25, 26, 27, 28],
-    [29, 30, 31, 32],
-    [33, 34, 35, 36],
-    [37, 38, 39, 40],
+// ─── Sütun verisi ─────────────────────────────────────────────
+// w = pencere tarafı (üst sıra),  a = koridor tarafı (orta sıra),  l = alt sıra
+// null = o pozisyonda koltuk yok (boşluk hücresi)
+const COLS = [
+    { w: 3,    a: 2,    l: 1    },  // 0
+    { w: 6,    a: 5,    l: 4    },  // 1
+    { w: 9,    a: 8,    l: 7    },  // 2
+    { w: 12,   a: 11,   l: 10   },  // 3
+    { w: 15,   a: 14,   l: 13   },  // 4
+    { w: 18,   a: 17,   l: 16   },  // 5
+    { w: 23,   a: 22,   l: null },  // 6  ← geçiş (üstte 22-23, altta giriş kapısı)
+    { w: null, a: null, l: 19   },  // 7  ┐
+    { w: null, a: null, l: 20   },  // 8  ├─ giriş koltukları
+    { w: null, a: null, l: 21   },  // 9  ┘
+    { w: 26,   a: 25,   l: 24   },  // 10
+    { w: 29,   a: 28,   l: 27   },  // 11
+    { w: 32,   a: 31,   l: 30   },  // 12
+    { w: 35,   a: 34,   l: 33   },  // 13
+    { w: 38,   a: 37,   l: 36   },  // 14
+    { w: 40,   a: 39,   l: null },  // 15 ← son üst çift (altta yok)
+    { w: null, a: null, l: 41   },  // 16 ← arka köşe koltuk
 ];
-const BACK_SEAT = 41;
+
+// Sütun 6 ile 10 arasına bölüm ayrımı eklemek için bu index'te görsel ara boşluk koyacağız
+const SECTION_GAP_AFTER = 6; // col 6'dan sonra görsel ara boşluk
 
 let _overlay = null;
 
 /**
  * Koltuk seçim popup'ını göster.
- * @param {string} availableSeatsStr  - Virgülle ayrılmış boş koltuk numaraları ("1,3,5,...")
- * @param {string} occupiedSeatsStr   - Virgülle ayrılmış dolu koltuk numaraları ("2,4,6,...")
- * @param {function} onConfirm        - Kullanıcı koltuk seçip onaylayınca çağrılır (seatNo: number)
+ * @param {string}   availableSeatsStr  Virgülle ayrılmış boş koltuk no'ları
+ * @param {string}   occupiedSeatsStr   Virgülle ayrılmış dolu koltuk no'ları
+ * @param {function} onConfirm          (seatNo: number) → void
  */
 export function showSeatMap(availableSeatsStr, occupiedSeatsStr, onConfirm) {
-    // Zaten açıksa kapat
     if (_overlay) _overlay.remove();
 
-    const availableSet = new Set(
-        (availableSeatsStr || '').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
-    );
-    const occupiedSet = new Set(
-        (occupiedSeatsStr || '').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
-    );
-
+    const availableSet = _parseSeats(availableSeatsStr);
+    // occupiedSet artık kullanılmıyor; 1-41 arasında available olmayan = dolu
     let selectedSeat = null;
 
-    // ─── Overlay ────────────────────────────────────────────────
+    // ── Overlay ───────────────────────────────────────────────
     _overlay = document.createElement('div');
-    _overlay.id = 'seat-map-overlay';
+    _overlay.id  = 'seat-map-overlay';
     _overlay.className = 'seat-map-overlay';
 
-    // Overlay dışına tıklanınca kapatma KAPATILDI (kullanıcı seçim yapmadan kapanmasın)
-
-    // ─── Popup kutusu ────────────────────────────────────────────
+    // ── Kutu ──────────────────────────────────────────────────
     const box = document.createElement('div');
     box.className = 'seat-map-box';
 
     // Başlık
-    const header = document.createElement('div');
-    header.className = 'seat-map-header';
-    header.innerHTML = `
-        <div class="seat-map-title">
-            <i class="fa-solid fa-bus"></i> Koltuk Seçimi
-        </div>
-        <div class="seat-map-subtitle">Lütfen bir koltuk seçin</div>
-    `;
+    box.appendChild(_buildHeader());
 
-    // İçerik
+    // Gövde
     const body = document.createElement('div');
     body.className = 'seat-map-body';
 
-    // Otobüs gövdesi
-    const busWrap = document.createElement('div');
-    busWrap.className = 'bus-wrap';
-
-    // Şoför alanı
-    const driverRow = document.createElement('div');
-    driverRow.className = 'bus-driver-row';
-    driverRow.innerHTML = `
-        <div class="bus-driver-icon">
-            <i class="fa-solid fa-steering-wheel"></i>
-            <span>Şoför</span>
-        </div>
-        <div class="bus-door-icon">
-            <i class="fa-solid fa-door-open"></i>
-        </div>
-    `;
-    busWrap.appendChild(driverRow);
-
-    // Koltuk sıraları
-    const seatsArea = document.createElement('div');
-    seatsArea.className = 'seats-area';
-
-    // Sıra numaraları + koltuklar
-    BUS_ROWS.forEach((row, rowIdx) => {
-        const rowEl = document.createElement('div');
-        rowEl.className = 'seat-row';
-
-        // Sıra numarası
-        const rowNum = document.createElement('div');
-        rowNum.className = 'row-number';
-        rowNum.textContent = rowIdx + 1;
-        rowEl.appendChild(rowNum);
-
-        // Sol taraf (2 koltuk)
-        const leftPair = document.createElement('div');
-        leftPair.className = 'seat-pair';
-        [row[0], row[1]].forEach(seatNo => {
-            leftPair.appendChild(_createSeat(seatNo, availableSet, occupiedSet, onSeatClick));
-        });
-        rowEl.appendChild(leftPair);
-
-        // Koridor
-        const aisle = document.createElement('div');
-        aisle.className = 'aisle-gap';
-        rowEl.appendChild(aisle);
-
-        // Sağ taraf (2 koltuk)
-        const rightPair = document.createElement('div');
-        rightPair.className = 'seat-pair';
-        [row[2], row[3]].forEach(seatNo => {
-            rightPair.appendChild(_createSeat(seatNo, availableSet, occupiedSet, onSeatClick));
-        });
-        rowEl.appendChild(rightPair);
-
-        seatsArea.appendChild(rowEl);
-    });
-
-    // Arka koltuk
-    const backRowEl = document.createElement('div');
-    backRowEl.className = 'seat-row back-row';
-    const backLabel = document.createElement('div');
-    backLabel.className = 'row-number';
-    backLabel.textContent = '↑';
-    backRowEl.appendChild(backLabel);
-    const backCenter = document.createElement('div');
-    backCenter.className = 'back-seat-center';
-    backCenter.appendChild(_createSeat(BACK_SEAT, availableSet, occupiedSet, onSeatClick));
-    backRowEl.appendChild(backCenter);
-    seatsArea.appendChild(backRowEl);
-
-    busWrap.appendChild(seatsArea);
-    body.appendChild(busWrap);
+    // Otobüs
+    body.appendChild(_buildBus(availableSet, _onSeatClick));
 
     // Lejant
-    const legend = document.createElement('div');
-    legend.className = 'seat-legend';
-    legend.innerHTML = `
-        <div class="legend-item">
-            <div class="legend-box legend-available"></div>
-            <span>Boş Koltuk</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-box legend-occupied"></div>
-            <span>Dolu Koltuk</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-box legend-selected"></div>
-            <span>Seçilen Koltuk</span>
-        </div>
-    `;
-    body.appendChild(legend);
+    body.appendChild(_buildLegend());
 
     // Seçim bilgisi
-    const selInfo = document.createElement('div');
-    selInfo.className = 'seat-selection-info';
-    selInfo.id = 'seat-selection-info';
-    selInfo.textContent = 'Henüz koltuk seçilmedi';
-    body.appendChild(selInfo);
+    const info = document.createElement('div');
+    info.className = 'seat-selection-info';
+    info.id = 'smi-info';
+    info.textContent = 'Henüz koltuk seçilmedi';
+    body.appendChild(info);
 
-    // Alt buton
-    const footer = document.createElement('div');
-    footer.className = 'seat-map-footer';
-    const confirmBtn = document.createElement('button');
-    confirmBtn.className = 'seat-confirm-btn disabled';
-    confirmBtn.id = 'seat-confirm-btn';
-    confirmBtn.disabled = true;
-    confirmBtn.innerHTML = `<i class="fa-solid fa-check"></i> Onayla ve Devam Et`;
-    confirmBtn.addEventListener('click', () => {
+    box.appendChild(body);
+
+    // Footer
+    box.appendChild(_buildFooter());
+    _overlay.appendChild(box);
+    document.body.appendChild(_overlay);
+    requestAnimationFrame(() => _overlay.classList.add('visible'));
+
+    // ── Koltuk tıklama ────────────────────────────────────────
+    function _onSeatClick(num) {
+        document.querySelectorAll('.smi-seat.selected')
+            .forEach(el => el.classList.remove('selected'));
+        const el = document.querySelector(`.smi-seat[data-n="${num}"]`);
+        if (el) el.classList.add('selected');
+        selectedSeat = num;
+        const infoEl = document.getElementById('smi-info');
+        if (infoEl) infoEl.textContent = `Seçilen koltuk: ${num}`;
+        const btn = document.getElementById('smi-confirm');
+        if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
+    }
+
+    // Onayla butonu
+    document.getElementById('smi-confirm')?.addEventListener('click', () => {
         if (selectedSeat === null) return;
         _close();
         onConfirm(selectedSeat);
     });
-    footer.appendChild(confirmBtn);
-    body.appendChild(footer);
-
-    // Birleştir
-    box.appendChild(header);
-    box.appendChild(body);
-    _overlay.appendChild(box);
-    document.body.appendChild(_overlay);
-
-    // Animasyon
-    requestAnimationFrame(() => _overlay.classList.add('visible'));
-
-    // ─── Koltuk tıklama handler ──────────────────────────────────
-    function onSeatClick(seatNo) {
-        // Önceki seçimi temizle
-        document.querySelectorAll('.seat-btn.selected').forEach(el => {
-            el.classList.remove('selected');
-        });
-
-        selectedSeat = seatNo;
-
-        // Yeni seçimi işaretle
-        const target = document.querySelector(`.seat-btn[data-seat="${seatNo}"]`);
-        if (target) target.classList.add('selected');
-
-        // Bilgi güncelle
-        const info = document.getElementById('seat-selection-info');
-        if (info) info.textContent = `Seçilen koltuk: ${seatNo}`;
-
-        // Butonu aktif et
-        const btn = document.getElementById('seat-confirm-btn');
-        if (btn) {
-            btn.disabled = false;
-            btn.classList.remove('disabled');
-        }
-    }
 }
 
-/** Popup'ı kapat */
+// ─── İç yardımcılar ──────────────────────────────────────────
+
+function _parseSeats(str) {
+    return new Set(
+        (str || '').split(',')
+            .map(s => parseInt(s.trim()))
+            .filter(n => !isNaN(n) && n > 0)
+    );
+}
+
 function _close() {
-    if (_overlay) {
-        _overlay.classList.remove('visible');
-        setTimeout(() => {
-            _overlay?.remove();
-            _overlay = null;
-        }, 280);
-    }
+    if (!_overlay) return;
+    _overlay.classList.remove('visible');
+    setTimeout(() => { _overlay?.remove(); _overlay = null; }, 300);
 }
 
-/** Tek bir koltuk elementi oluştur */
-function _createSeat(seatNo, availableSet, occupiedSet, onSeatClick) {
+function _buildHeader() {
+    const h = document.createElement('div');
+    h.className = 'seat-map-header';
+    h.innerHTML = `
+        <div class="smi-title"><i class="fa-solid fa-bus"></i> Koltuk Seçimi</div>
+        <div class="smi-sub">Lütfen boş bir koltuk seçin</div>
+    `;
+    return h;
+}
+
+function _buildLegend() {
+    const l = document.createElement('div');
+    l.className = 'smi-legend';
+    l.innerHTML = `
+        <div class="smi-leg-item"><div class="smi-leg-box smi-avail"></div><span>Boş Koltuk</span></div>
+        <div class="smi-leg-item"><div class="smi-leg-box smi-occ"></div><span>Dolu Koltuk</span></div>
+        <div class="smi-leg-item"><div class="smi-leg-box smi-sel"></div><span>Seçilen Koltuk</span></div>
+    `;
+    return l;
+}
+
+function _buildFooter() {
+    const f = document.createElement('div');
+    f.className = 'seat-map-footer';
     const btn = document.createElement('button');
-    btn.className = 'seat-btn';
-    btn.dataset.seat = seatNo;
-    btn.textContent = seatNo;
+    btn.className = 'seat-confirm-btn disabled';
+    btn.id = 'smi-confirm';
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-check"></i> Onayla ve Devam Et`;
+    f.appendChild(btn);
+    return f;
+}
 
-    if (availableSet.has(seatNo)) {
-        btn.classList.add('available');
-        btn.title = `Koltuk ${seatNo} — Boş`;
-        btn.addEventListener('click', () => onSeatClick(seatNo));
+/**
+ * Otobüs gövdesini oluştur.
+ * Görseldeki gibi yatay düzen:
+ *   Üst-pencere satırı  →  tüm w koltukları
+ *   Üst-koridor satırı  →  tüm a koltukları
+ *   Ana koridor çizgisi →  görsel ayraç + şoför
+ *   Alt satır           →  tüm l koltukları
+ */
+function _buildBus(availableSet, onSeatClick) {
+    const wrap = document.createElement('div');
+    wrap.className = 'smi-bus-wrap';
+
+    // İçerik (4 satır)
+    const grid = document.createElement('div');
+    grid.className = 'smi-grid';
+
+    // ── Satır 1: Pencere (üst) ────────────────────────────────
+    const rowW = document.createElement('div');
+    rowW.className = 'smi-row';
+    // Şoför tarafındaki boşluk (şoför col 0'da görünecek)
+    rowW.appendChild(_spacer('smi-driver-spacer'));
+    COLS.forEach((col, i) => {
+        if (i === SECTION_GAP_AFTER + 1) rowW.appendChild(_gapDiv());
+        rowW.appendChild(col.w !== null
+            ? _seat(col.w, availableSet, onSeatClick)
+            : _spacer());
+    });
+
+    // ── Satır 2: Koridor tarafı (üst) ─────────────────────────
+    const rowA = document.createElement('div');
+    rowA.className = 'smi-row';
+    rowA.appendChild(_spacer('smi-driver-spacer'));
+    COLS.forEach((col, i) => {
+        if (i === SECTION_GAP_AFTER + 1) rowA.appendChild(_gapDiv());
+        rowA.appendChild(col.a !== null
+            ? _seat(col.a, availableSet, onSeatClick)
+            : _spacer());
+    });
+
+    // ── Satır 3: Ana koridor ───────────────────────────────────
+    const rowMid = document.createElement('div');
+    rowMid.className = 'smi-row smi-corridor';
+    const driverBox = document.createElement('div');
+    driverBox.className = 'smi-driver-box';
+    driverBox.innerHTML = `<i class="fa-solid fa-circle-dot"></i>`;
+    rowMid.appendChild(driverBox);
+    const corridorLine = document.createElement('div');
+    corridorLine.className = 'smi-corridor-line';
+    rowMid.appendChild(corridorLine);
+
+    // ── Satır 4: Alt satır ────────────────────────────────────
+    const rowL = document.createElement('div');
+    rowL.className = 'smi-row';
+    rowL.appendChild(_spacer('smi-driver-spacer'));
+    COLS.forEach((col, i) => {
+        if (i === SECTION_GAP_AFTER + 1) rowL.appendChild(_gapDiv());
+        rowL.appendChild(col.l !== null
+            ? _seat(col.l, availableSet, onSeatClick)
+            : _spacer());
+    });
+
+    grid.appendChild(rowW);
+    grid.appendChild(rowA);
+    grid.appendChild(rowMid);
+    grid.appendChild(rowL);
+    wrap.appendChild(grid);
+    return wrap;
+}
+
+function _seat(num, availableSet, onSeatClick) {
+    const btn = document.createElement('button');
+    btn.className = 'smi-seat';
+    btn.dataset.n = num;
+    btn.textContent = num;
+    if (availableSet.has(num)) {
+        btn.classList.add('avail');
+        btn.title = `Koltuk ${num} — Boş`;
+        btn.addEventListener('click', () => onSeatClick(num));
     } else {
-        // Dolu (ya occupiedSet'te ya da DB'de available değil)
-        btn.classList.add('occupied');
+        btn.classList.add('occ');
         btn.disabled = true;
-        btn.title = `Koltuk ${seatNo} — Dolu`;
+        btn.title = `Koltuk ${num} — Dolu`;
     }
-
     return btn;
+}
+
+function _spacer(cls = '') {
+    const d = document.createElement('div');
+    d.className = 'smi-spacer' + (cls ? ' ' + cls : '');
+    return d;
+}
+
+function _gapDiv() {
+    const d = document.createElement('div');
+    d.className = 'smi-section-gap';
+    return d;
 }
