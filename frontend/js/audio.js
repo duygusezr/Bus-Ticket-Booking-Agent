@@ -12,7 +12,7 @@
  *  SILENCE_DURATION_NUMERIC — TC/telefon bağlamında uzatılmış tolerans
  *  MIN_SPEECH_MS            — Daha kısa ses → gürültü, atla
  *  POST_SPEECH_COOLDOWN_MS  — Avatar bittikten sonra VAD bekleme süresi
- *  ELA_SPEAKING_LINGER_MS   — Ses parçaları arası boşlukta elaIsSpeaking'i koru
+ *  AVATAR_SPEAKING_LINGER_MS   — Ses parçaları arası boşlukta avatarIsSpeaking'i koru
  */
 import { setSpeaking, setListening, setActiveSource, setAnalyser, stopLipSync } from './avatar.js';
 
@@ -26,7 +26,7 @@ const SILENCE_DURATION_NUMERIC = 2500;
 const MIN_SPEECH_MS            = 200;  // Biraz daha kısa (eski: 250)
 const VAD_CONFIRM_FRAMES       = 1;
 const POST_SPEECH_COOLDOWN_MS  = 600;  // Biraz kısaltıldı (eski: 800)
-const ELA_SPEAKING_LINGER_MS   = 300;  // Ses parçaları arası geçişte bekleme
+const AVATAR_SPEAKING_LINGER_MS   = 300;  // Ses parçaları arası geçişte bekleme
 
 // ─── Modül durumu ─────────────────────────────────────────────
 let audioCtx      = null;
@@ -34,8 +34,8 @@ let analyser      = null;
 let dataArray     = null;
 let isAudioMuted  = false;
 let _activeSource = null;
-let elaIsSpeaking = false;
-let _elaLingerTimer = null;  // ses parçaları arası geçiş zamanlayıcısı
+let avatarIsSpeaking = false;
+let _avatarLingerTimer = null;  // ses parçaları arası geçiş zamanlayıcısı
 let _activeAudioCount = 0;   // aynı anda kaç ses parçası oynatılıyor
 
 // Noise floor (AI konuşurken ortam sesi tabanı)
@@ -143,7 +143,7 @@ function _bargeInThreshold() {
 
 // ─── Avatar'ı durdur (barge-in) ───────────────────────────────
 
-function stopEla() {
+function stopAvatar() {
     if (_activeSource) {
         try { _activeSource.stop(); } catch (_) {}
         _activeSource = null;
@@ -152,28 +152,28 @@ function stopEla() {
     setSpeaking(false);
     stopLipSync();
     _activeAudioCount = 0;
-    elaIsSpeaking = false;
-    if (_elaLingerTimer) { clearTimeout(_elaLingerTimer); _elaLingerTimer = null; }
+    avatarIsSpeaking = false;
+    if (_avatarLingerTimer) { clearTimeout(_avatarLingerTimer); _avatarLingerTimer = null; }
     _resetNoiseFloor();
 }
 
-export function stopAudio() { stopEla(); }
+export function stopAudio() { stopAvatar(); }
 
 // ─── AI konuşma durumunu güvenli şekilde kapat ────────────────
 // Ses parçaları arası geçişte hemen false yapmaz; kısa süre bekler.
 
-function _scheduleElaEnd() {
-    if (_elaLingerTimer) { clearTimeout(_elaLingerTimer); }
-    _elaLingerTimer = setTimeout(() => {
-        _elaLingerTimer = null;
-        if (_activeAudioCount <= 0) {
-            elaIsSpeaking = false;
+function _scheduleAvatarEnd() {
+    if (_avatarLingerTimer) { clearTimeout(_avatarLingerTimer); }
+    _avatarLingerTimer = setTimeout(() => {
+        _avatarLingerTimer = null;
+        if (_activeAudioCount === 0) {
+            avatarIsSpeaking = false;
             _resetNoiseFloor();
             vadCooldownUntil = Date.now() + POST_SPEECH_COOLDOWN_MS;
             aboveThresholdFrames = 0;
             if (_subtitle && vadActive) _subtitle.textContent = getSubtitleText('listening');
         }
-    }, ELA_SPEAKING_LINGER_MS);
+    }, AVATAR_SPEAKING_LINGER_MS);
 }
 
 // ─── VAD kaydını başlat ───────────────────────────────────────
@@ -269,7 +269,7 @@ function vadLoop() {
         ? SILENCE_DURATION_NUMERIC
         : SILENCE_DURATION_MS;
 
-    if (elaIsSpeaking) {
+    if (avatarIsSpeaking) {
         // ── AI konuşuyor: noise floor takibi + dinamik barge-in ──
         _updateNoiseFloor(volume);
 
@@ -282,7 +282,7 @@ function vadLoop() {
 
             if (aboveThresholdFrames >= 2) {
                 // Barge-in: AI'yı durdur, kullanıcıyı kaydet
-                stopEla();
+                stopAvatar();
                 vadCooldownUntil = 0; // barge-in sonrası cooldown yok
                 if (!isRecording) startVadRecording();
             }
@@ -343,7 +343,7 @@ export async function playBase64Audio(base64Str) {
         }
 
         // Linger timer varsa iptal et — hâlâ konuşuyoruz
-        if (_elaLingerTimer) { clearTimeout(_elaLingerTimer); _elaLingerTimer = null; }
+        if (_avatarLingerTimer) { clearTimeout(_avatarLingerTimer); _avatarLingerTimer = null; }
 
         const source = audioCtx.createBufferSource();
         source.buffer = audioBuffer;
@@ -353,7 +353,7 @@ export async function playBase64Audio(base64Str) {
 
         // Sayaç artır
         _activeAudioCount++;
-        elaIsSpeaking = true;
+        avatarIsSpeaking = true;
 
         source.onended = () => {
             _activeAudioCount = Math.max(0, _activeAudioCount - 1);
@@ -364,8 +364,8 @@ export async function playBase64Audio(base64Str) {
                 setSpeaking(false);
             }
 
-            // Ses parçaları arası kısa boşlukta elaIsSpeaking'i hemen false yapma
-            _scheduleElaEnd();
+            // Ses parçaları arası kısa boşlukta avatarIsSpeaking'i hemen false yapma
+            _scheduleAvatarEnd();
         };
 
         source.connect(analyser);
@@ -373,7 +373,7 @@ export async function playBase64Audio(base64Str) {
         source.start(0);
     } catch (e) {
         _activeAudioCount = Math.max(0, _activeAudioCount - 1);
-        elaIsSpeaking = _activeAudioCount > 0;
+        avatarIsSpeaking = _activeAudioCount > 0;
         setSpeaking(false);
         const subtitle = document.getElementById('subtitle');
         if (subtitle) subtitle.textContent = 'Ses çalınamadı.';
@@ -411,7 +411,7 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, getLang, subtitle
         vadActive = false;
         if (vadRafId)     { cancelAnimationFrame(vadRafId); vadRafId = null; }
         if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
-        if (_elaLingerTimer) { clearTimeout(_elaLingerTimer); _elaLingerTimer = null; }
+        if (_avatarLingerTimer) { clearTimeout(_avatarLingerTimer); _avatarLingerTimer = null; }
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
             try { mediaRecorder.stop(); } catch (_) {}
         }
@@ -419,7 +419,7 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, getLang, subtitle
         micAnalyser          = null;
         micDataArray         = null;
         isRecording          = false;
-        elaIsSpeaking        = false;
+        avatarIsSpeaking        = false;
         _activeAudioCount    = 0;
         aboveThresholdFrames = 0;
         _resetNoiseFloor();
