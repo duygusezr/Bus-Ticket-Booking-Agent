@@ -10,7 +10,7 @@ services:
   # ── PostgreSQL ─────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    container_name: ela-postgres
+    container_name: avatar-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -26,12 +26,12 @@ services:
       timeout: 3s
       retries: 5
 
-  # ── Backend (FastAPI + Ela) ────────────────────────────────
+  # ── Backend (FastAPI + Avatar) ────────────────────────────────
   backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ela-backend
+    container_name: avatar-backend
     restart: unless-stopped
     ports:
       - "8001:8001"
@@ -50,7 +50,7 @@ services:
   # ── Frontend (Static) ─────────────────────────────────────
   frontend:
     image: nginx:alpine
-    container_name: ela-frontend
+    container_name: avatar-frontend
     restart: unless-stopped
     ports:
       - "3000:80"

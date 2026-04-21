@@ -2,8 +2,8 @@
 # Bus Ticket Booking Agent — Multi-stage Docker Build
 # ============================================================
 # Kullanım:
-#   docker build -t ela-booking .
-#   docker run -p 8001:8001 --env-file backend/.env ela-booking
+#   docker build -t avatar-booking .
+#   docker run -p 8001:8001 --env-file backend/.env avatar-booking
 #
 # Docker Compose ile (önerilen):
 #   docker compose up --build

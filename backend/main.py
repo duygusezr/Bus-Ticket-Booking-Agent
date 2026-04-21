@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Bus Ticket Booking API",
-    description="LLM + TTS + STT backend for the Ela avatar chatbot",
+    description="LLM + TTS + STT backend for the avatar chatbot",
     version="1.0.0",
     lifespan=lifespan,
 )

@@ -5,17 +5,16 @@ set PROJECT_DIR=%~dp0
 cd /d "%PROJECT_DIR%"
 
 echo ==========================================
-echo ELA: Gercek Zamanli Avatar AI Baslatiliyor...
+echo Avatar: Gercek Zamanli Avatar AI Baslatiliyor...
 echo ==========================================
 echo.
+echo Bu pencereyi kapatmayin.
 
-echo [1/2] Backend baslatiliyor... (Port: 8001)
-start "ELA Backend" cmd /k "chcp 65001 >nul && cd /d "%PROJECT_DIR%backend" && .\venv\Scripts\python.exe main.py"
+:: Backend'i ayri pencerede baslat
+start "Avatar Backend" cmd /k "chcp 65001 >nul && cd /d "%PROJECT_DIR%backend" && .\venv\Scripts\python.exe main.py"
 
-timeout /t 3 /nobreak >nul
-
-echo [2/2] Frontend baslatiliyor... (Port: 3000)
-start "ELA Frontend" cmd /k "cd /d "%PROJECT_DIR%frontend" && python -m http.server 3000"
+:: Frontend'i ayri pencerede baslat
+start "Avatar Frontend" cmd /k "cd /d "%PROJECT_DIR%frontend" && python -m http.server 3000"
 
 echo.
 echo Tum servisler hazir!

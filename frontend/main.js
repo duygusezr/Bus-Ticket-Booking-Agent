@@ -11,7 +11,7 @@ import { loadVRM } from './js/avatar.js';   // Sahneyi başlatır ve animasyon d
 
 // ─── Varsayılan ses garantisi ───────────────────────────────────────
 // Özel bir avatar yüklenmemişse (avatarFileName yoksa) ses her zaman
-// kadın (default) olmalıdır — Ela.vrm varsayılan kadın karakterdir.
+// kadın (default) olmalıdır — avatar.vrm varsayılan kadın karakterdir.
 if (!localStorage.getItem('avatarFileName')) {
     localStorage.setItem('avatarVoice', 'default');
 }
@@ -174,7 +174,7 @@ avatarSettingsBtn?.addEventListener('click', () => {
     _updateAvatarNameDisplay();
     _setAvatarStatus('');
     if (avatarProgressWrap) avatarProgressWrap.hidden = true;
-    // Ses hiç ayarlanmamışsa varsayılan = kadın (Ela.vrm için)
+    // Ses hiç ayarlanmamışsa varsayılan = kadın (avatar.vrm için)
     if (!localStorage.getItem('avatarVoice')) localStorage.setItem('avatarVoice', 'default');
     const savedVoice = localStorage.getItem('avatarVoice');
     document.querySelectorAll('.avatar-voice-btn').forEach(btn => {
@@ -222,13 +222,13 @@ document.querySelectorAll('.avatar-voice-btn').forEach(btn => {
 avatarResetBtn?.addEventListener('click', async () => {
     localStorage.removeItem('avatarUrl');
     localStorage.removeItem('avatarFileName');
-    localStorage.setItem('avatarVoice', 'default');  // Ela.vrm → her zaman kadın sesi
+    localStorage.setItem('avatarVoice', 'default');  // avatar.vrm → her zaman kadın sesi
     _setAvatarStatus('');
     if (avatarProgressWrap) avatarProgressWrap.hidden = false;
     if (avatarProgressFill) avatarProgressFill.style.width = '0%';
     if (avatarProgressText) avatarProgressText.textContent = 'Yükleniyor...';
     try {
-        await loadVRM('./models/Ela.vrm', p => {
+        await loadVRM('./models/avatar.vrm', p => {
             const pct = p.total > 0 ? Math.round((p.loaded / p.total) * 100) : 0;
             if (avatarProgressFill) avatarProgressFill.style.width = pct + '%';
         });
