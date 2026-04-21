@@ -516,6 +516,13 @@ python main.py
 
 Backend `http://localhost:8001` adresinde, frontend ise `http://localhost:3000` (veya Live Server portu) üzerinde çalışır.
 
+### 4. Canlı Sunucu (Deployment)
+
+Projenin canlı ortam dağıtımı (deployment) aktif olarak tamamlanmış olup şu platformlarda çalışmaktadır:
+
+- **Frontend (İstemci / Arayüz):** Vercel üzerinde barındırılmaktadır.
+- **Backend (API ve WebSocket Servisleri):** Railway sunucuları üzerinde barındırılmaktadır.
+
 ---
 
 ## 📦 Kullanılan Teknolojiler ve Kütüphaneler
