@@ -46,7 +46,7 @@ async def _summarize(session: dict, session_id: str) -> None:
 
     try:
         buffer_text = "\n".join(
-            f"Kullanıcı: {m['user']}\nELA: {m['ai']}" for m in buffer_snapshot
+            f"Kullanıcı: {m['user']}\nAsistan: {m['ai']}" for m in buffer_snapshot
         )
         prev = f"Önceki özet:\n{session['summary']}\n\n" if session["summary"] else ""
         is_en = any(w in buffer_text.lower() for w in ("hello", "i want to", "ticket", "route", "trip"))

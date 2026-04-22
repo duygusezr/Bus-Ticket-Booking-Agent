@@ -36,7 +36,7 @@ export const getLang = () => _currentLang;
 
 const translations = {
     tr: {
-        subtitle:    'Otobüs bileti Randevu AI Asistanı',
+        subtitle:    'Müşteri Asistanı',
         placeholder: 'Bir mesaj yazın...',
         welcome:     'Merhaba! Size en uygun otobüs biletini bulmam için nereden nereye ve hangi tarihte seyahat edeceğinizi söyler misiniz?',
         thinking:    'Düşünüyor...',
@@ -85,7 +85,7 @@ export function addToHistoryPanel(role, text) {
         const bubble = document.createElement('div');
         bubble.className = 'bubble';
         const img = document.createElement('img');
-        img.src = './ela_avatar.png';
+        img.src = './avatar_icon.png';
         img.alt = 'bot';
         img.className = 'avatar-icon';
         const content = document.createElement('div');
@@ -138,7 +138,7 @@ export function initWebSocket() {
                     const bubble = document.createElement('div');
                     bubble.className = 'bubble';
                     const img = document.createElement('img');
-                    img.src = './ela_avatar.png';
+                    img.src = './avatar_icon.png';
                     img.alt = 'bot';
                     img.className = 'avatar-icon';
                     const content = document.createElement('div');
