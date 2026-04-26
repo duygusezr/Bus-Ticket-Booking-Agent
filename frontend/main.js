@@ -29,6 +29,7 @@ import {
     sendMessage,
     addToHistoryPanel,
     initWebSocket,
+    resetChat,
 } from './js/chat.js';
 
 // ─── WebSocket bağlantısını başlat ───────────────────────────
@@ -50,8 +51,8 @@ const subtitle        = document.getElementById('subtitle');
 
 // ─── Dil butonları ────────────────────────────────────────────
 
-langTrBtn?.addEventListener('click', () => setLanguage('tr'));
-langEnBtn?.addEventListener('click', () => setLanguage('en'));
+langTrBtn?.addEventListener('click', () => { setLanguage('tr'); resetChat(); });
+langEnBtn?.addEventListener('click', () => { setLanguage('en'); resetChat(); });
 
 // ─── Mesaj gönderme ───────────────────────────────────────────
 
@@ -112,6 +113,7 @@ async function _switchAvatar(gender) {
     genderFemaleBtn?.classList.toggle('active', gender === 'female');
     genderMaleBtn?.classList.toggle('active',   gender === 'male');
     localStorage.setItem('avatarVoice', cfg.voice);
+    resetChat();
     try { await loadVRM(cfg.model, null, cfg.rotation); }
     catch (e) { console.error('Avatar yüklenemedi:', e); }
 }

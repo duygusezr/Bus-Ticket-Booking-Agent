@@ -49,6 +49,39 @@ const translations = {
     },
 };
 
+/**
+ * Sohbet geçmişini temizler ve hoş geldin mesajını gösterir.
+ * Avatar değişiminde veya dil değişiminde çağrılır.
+ */
+export function resetChat() {
+    stopAudio();
+    isSending = false;
+    currentFullResponse = '';
+    chatHistory.length = 0;
+    if (subtitle) subtitle.textContent = '';
+
+    // Geçmiş listesini temizle, sadece hoş geldin mesajını bırak
+    if (historyList) {
+        historyList.innerHTML = '';
+        const item = document.createElement('div');
+        item.className = 'history-item ai';
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        const img = document.createElement('img');
+        img.src = './avatar_icon.png';
+        img.alt = 'bot';
+        img.className = 'avatar-icon';
+        const content = document.createElement('div');
+        content.className = 'content';
+        content.id = 'welcome-msg';
+        content.textContent = translations[_currentLang].welcome;
+        bubble.appendChild(img);
+        bubble.appendChild(content);
+        item.appendChild(bubble);
+        historyList.appendChild(item);
+    }
+}
+
 export function setLanguage(lang) {
     _currentLang = lang;
     if (chatInput) chatInput.placeholder = translations[lang].placeholder;
