@@ -55,7 +55,7 @@ langEnBtn?.addEventListener('click', () => setLanguage('en'));
 
 // ─── Mesaj gönderme ───────────────────────────────────────────
 
-sendBtn?.addEventListener('click', sendMessage);
+sendBtn?.addEventListener('click', () => sendMessage());
 chatInput?.addEventListener('keypress', e => {
     if (e.key === 'Enter') { e.preventDefault(); sendMessage(); }
 });

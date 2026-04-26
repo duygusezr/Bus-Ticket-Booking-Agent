@@ -63,13 +63,23 @@ html {
 /* Üst Kısım */
 .chat-header {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     padding: 15px 30px;
     border-bottom: 1px solid #f0f0f0;
 }
 
 .header-left {
-    display: none;
+    display: flex;
+    align-items: center;
+}
+
+.chat-header-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #333;
+    letter-spacing: 0.2px;
 }
 
 /* Dil Seçici (Premium Pill Tasarımı) */

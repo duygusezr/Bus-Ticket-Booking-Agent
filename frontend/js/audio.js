@@ -14,7 +14,7 @@
  *  POST_SPEECH_COOLDOWN_MS  — Avatar bittikten sonra VAD bekleme süresi
  *  AVATAR_SPEAKING_LINGER_MS   — Ses parçaları arası boşlukta avatarIsSpeaking'i koru
  */
-import { setSpeaking, setListening, setActiveSource, setAnalyser, stopLipSync } from './avatar.js';
+import { setSpeaking, setListening, setActiveSource, setAnalyser, stopLipSync, applyRocketboxViseme, resetVisemeImmediate, textToVisemeIndices, setVisemeMode } from './avatar.js';
 
 // ─── Sabitler ─────────────────────────────────────────────────
 const VAD_THRESHOLD            = 20;   // Normal dinleme eşiği (eski: 25)
@@ -151,6 +151,9 @@ function stopAvatar() {
     }
     setSpeaking(false);
     stopLipSync();
+    _clearVisemeTimers();
+    resetVisemeImmediate();
+    setVisemeMode(false);
     _activeAudioCount = 0;
     avatarIsSpeaking = false;
     if (_avatarLingerTimer) { clearTimeout(_avatarLingerTimer); _avatarLingerTimer = null; }
@@ -322,9 +325,101 @@ function vadLoop() {
     vadRafId = requestAnimationFrame(vadLoop);
 }
 
+// Viseme zamanlayıcıları
+let _visemeTimers = [];
+
+function _clearVisemeTimers() {
+    for (const t of _visemeTimers) clearTimeout(t);
+    _visemeTimers = [];
+}
+
+// Ünlü index seti (AA_VI 10-14)
+const VOWEL_VI = new Set([10, 11, 12, 13, 14]);
+
+/**
+ * AudioBuffer genliği + metin fonemlerini birleştirerek gerçek zamanlamalı
+ * viseme programı oluşturur.
+ *
+ * Yöntem:
+ *   1. AudioBuffer'dan 20ms'lik frame'lerde RMS genliği ölç
+ *   2. Sessiz frame'lerde ağız kapat (viseme 0)
+ *   3. Sesli frame'lerde metin fonemlerini eşit dağıt
+ *   4. Sadece değişim olduğunda timer ekle — minimum setTimeout sayısı
+ */
+function _scheduleAudioDrivenVisemes(audioBuffer, text, source) {
+    _clearVisemeTimers();
+    const phonemes = textToVisemeIndices(text);
+    if (!phonemes.length) { setVisemeMode(false); return; }
+    setVisemeMode(true);
+
+    const data       = audioBuffer.getChannelData(0);
+    const sr         = audioBuffer.sampleRate;
+    const frameMs    = 20;                            // 20ms analiz penceresi
+    const frameSamp  = Math.floor(sr * frameMs / 1000);
+    const numFrames  = Math.ceil(data.length / frameSamp);
+
+    // --- RMS hesapla ---
+    const rms = new Float32Array(numFrames);
+    let maxRms = 0;
+    for (let f = 0; f < numFrames; f++) {
+        const start = f * frameSamp;
+        const end   = Math.min(start + frameSamp, data.length);
+        let sum = 0;
+        for (let j = start; j < end; j++) sum += data[j] * data[j];
+        rms[f] = Math.sqrt(sum / (end - start));
+        if (rms[f] > maxRms) maxRms = rms[f];
+    }
+
+    // Sessizlik eşiği: maksimum genliğin %8'i
+    const threshold   = maxRms * 0.08;
+    const totalSpeech = rms.reduce((n, v) => n + (v > threshold ? 1 : 0), 0);
+    if (!totalSpeech) { setVisemeMode(false); return; }
+
+    let speechCount  = 0;
+    let lastVI       = -1;
+    let wasSilent    = true;
+
+    for (let f = 0; f < numFrames; f++) {
+        const tMs    = f * frameMs;
+        const silent = rms[f] <= threshold;
+
+        if (silent) {
+            if (!wasSilent) {
+                // Sesten sessiğe geçiş → ağzı kapat
+                const capturedT = tMs;
+                _visemeTimers.push(setTimeout(() => {
+                    if (_activeSource === source) applyRocketboxViseme(0);
+                }, capturedT));
+                lastVI = 0;
+            }
+        } else {
+            // Sesli bölge → fonem ata
+            const pi = Math.min(
+                Math.floor(speechCount * phonemes.length / totalSpeech),
+                phonemes.length - 1
+            );
+            const vi = phonemes[pi];
+            if (vi !== lastVI) {
+                const capturedVI = vi, capturedT = tMs;
+                _visemeTimers.push(setTimeout(() => {
+                    if (_activeSource === source) applyRocketboxViseme(capturedVI);
+                }, capturedT));
+                lastVI = vi;
+            }
+            speechCount++;
+        }
+        wasSilent = silent;
+    }
+
+    // Bitiminde kapat
+    _visemeTimers.push(setTimeout(() => {
+        if (_activeSource === source) resetVisemeImmediate();
+    }, audioBuffer.duration * 1000 - 30));
+}
+
 // ─── Base64 MP3 çalma ────────────────────────────────────────
 
-export async function playBase64Audio(base64Str) {
+export async function playBase64Audio(base64Str, words = [], spokenText = '') {
     if (!audioCtx) await initWebAudio();
 
     const chatInput = document.getElementById('chat-input');
@@ -357,20 +452,39 @@ export async function playBase64Audio(base64Str) {
 
         source.onended = () => {
             _activeAudioCount = Math.max(0, _activeAudioCount - 1);
-
             if (_activeSource === source) {
                 _activeSource = null;
                 setActiveSource(null);
                 setSpeaking(false);
             }
-
-            // Ses parçaları arası kısa boşlukta avatarIsSpeaking'i hemen false yapma
+            _clearVisemeTimers();
+            resetVisemeImmediate();
+            setVisemeMode(false);
             _scheduleAvatarEnd();
         };
 
         source.connect(analyser);
         if (!isAudioMuted) analyser.connect(audioCtx.destination);
         source.start(0);
+        // Backend'den kelime gelirse onu, yoksa spokenText üzerinden text-driven modunu çalıştır
+        if (words && words.length) {
+            // WordBoundary modu (backend yükseltilmişse)
+            setVisemeMode(true);
+            for (const [offsetMs, durationMs, wtext] of words) {
+                const phonemes = textToVisemeIndices(wtext);
+                const stepMs  = Math.max(35, durationMs / (phonemes.length || 1));
+                phonemes.forEach((vi, i) => {
+                    _visemeTimers.push(setTimeout(() => {
+                        if (_activeSource === source) applyRocketboxViseme(vi);
+                    }, offsetMs + i * stepMs));
+                });
+                _visemeTimers.push(setTimeout(() => {
+                    if (_activeSource === source) applyRocketboxViseme(0, 0);
+                }, offsetMs + durationMs));
+            }
+        } else if (spokenText) {
+            _scheduleAudioDrivenVisemes(audioBuffer, spokenText, source);
+        }
     } catch (e) {
         _activeAudioCount = Math.max(0, _activeAudioCount - 1);
         avatarIsSpeaking = _activeAudioCount > 0;

@@ -82,8 +82,11 @@ def _prepare_tts_text(text: str) -> str:
 # Edge-TTS
 # ─────────────────────────────────────────────
 
-async def _edge_tts(text: str, lang: str, voice_key: str) -> str:
-    """Synthesize via Edge-TTS with one retry on transient errors."""
+async def _edge_tts(text: str, lang: str, voice_key: str) -> tuple[str, list[list]]:
+    """
+    Returns (audio_base64, word_boundaries)
+    word_boundaries = [[offset_ms, duration_ms, word_text], ...]
+    """
     voice = _VOICES.get(voice_key, _VOICES.get(lang, _VOICES["tr"]))
     last_err: Exception | None = None
 
@@ -91,12 +94,21 @@ async def _edge_tts(text: str, lang: str, voice_key: str) -> str:
         try:
             communicate = edge_tts.Communicate(text, voice)
             audio = bytearray()
+            word_boundaries: list[list] = []
             async for chunk in communicate.stream():
-                if chunk.get("type") == "audio" and chunk.get("data") is not None:
+                ctype = chunk.get("type")
+                if ctype == "audio" and chunk.get("data") is not None:
                     audio.extend(chunk["data"])  # type: ignore[typeddict-item]
+                elif ctype == "WordBoundary":
+                    # offset ve duration 100-nanosaniye tick cinsinden → ms'ye çevir
+                    offset_ms   = int(chunk.get("offset", 0))   // 10_000
+                    duration_ms = int(chunk.get("duration", 0)) // 10_000
+                    word_text   = chunk.get("text", "")
+                    word_boundaries.append([offset_ms, duration_ms, word_text])
+            print(f"[TTS] {len(word_boundaries)} kelime sınırı bulundu. İlk 3: {word_boundaries[:3]}")
             if not audio:
                 raise RuntimeError("Edge-TTS returned empty audio.")
-            return base64.b64encode(audio).decode()
+            return base64.b64encode(audio).decode(), word_boundaries
         except Exception as e:
             last_err = e
             err_lower = str(e).lower()
@@ -112,16 +124,15 @@ async def _edge_tts(text: str, lang: str, voice_key: str) -> str:
 # Public API
 # ─────────────────────────────────────────────
 
-async def generate_tts(text: str, lang: str | None = None, voice: str = "default") -> str:
+async def generate_tts(
+    text: str, lang: str | None = None, voice: str = "default"
+) -> tuple[str, list[list]]:
     """
-    Convert text to speech. Returns base64-encoded MP3 string.
-    ACT/DELAY tokens are stripped before synthesis.
-    Falls back to empty string on failure (non-fatal for callers).
-
-    voice: "male" | "female" | "default"
+    Returns (audio_base64, word_boundaries)
+    word_boundaries = [[offset_ms, duration_ms, word_text], ...]
     """
     if not text or not text.strip():
-        return ""
+        return "", []
 
     lang = lang or settings.DEFAULT_LANG
 
@@ -142,4 +153,4 @@ async def generate_tts(text: str, lang: str | None = None, voice: str = "default
         return await _edge_tts(clean, lang, voice_key)
     except Exception as e:
         print(f"[TTS] Edge-TTS failed: {e}. Returning empty.")
-        return ""
+        return "", []

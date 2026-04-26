@@ -152,7 +152,8 @@ export function initWebSocket() {
                 historyList.scrollTop = historyList.scrollHeight;
             }
         } else if (data.type === 'audio') {
-            await playBase64Audio(data.content);
+            console.log('[VISEME] kelime sayisi:', (data.words||[]).length);
+            await playBase64Audio(data.content, data.words || [], currentFullResponse.trim());
         } else if (data.type === 'seat_map') {
             // Koltuk haritası popup'u göster
             showSeatMap(

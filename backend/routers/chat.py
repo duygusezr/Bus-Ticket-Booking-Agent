@@ -40,14 +40,14 @@ async def chat_endpoint(request: ChatRequest):
         response_text = await generate_chat_response(processed_text, request.history, lang, session_id)
         t_llm = time.perf_counter()
 
-        audio_base64 = await generate_tts(response_text, lang)
+        audio_base64, words = await generate_tts(response_text, lang)
         t_tts = time.perf_counter()
 
         logger.info(
             "REST LLM=%.3fs TTS=%.3fs TOTAL=%.3fs",
             t_llm - t0, t_tts - t_llm, t_tts - t0,
         )
-        return {"text": response_text, "audio": audio_base64, "emotion": "neutral"}
+        return {"text": response_text, "audio": audio_base64, "words": words, "emotion": "neutral"}
 
     except Exception as e:
         logger.exception("Chat endpoint hatası")
@@ -98,14 +98,14 @@ async def websocket_chat(websocket: WebSocket):
                     continue
 
                 t_tts = time.perf_counter()
-                audio_base64 = await generate_tts(full_response.strip(), lang, voice)
+                audio_base64, words = await generate_tts(full_response.strip(), lang, voice)
                 logger.info(
                     "WS TTS=%.3fs TOTAL=%.3fs",
                     time.perf_counter() - t_tts,
                     time.perf_counter() - t0,
                 )
 
-                await websocket.send_json({"type": "audio", "content": audio_base64})
+                await websocket.send_json({"type": "audio", "content": audio_base64, "words": words})
                 await websocket.send_json({"type": "emotion", "content": "neutral"})
 
                 # Koltuk haritası popup tetikleyici

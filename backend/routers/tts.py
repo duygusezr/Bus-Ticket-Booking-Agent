@@ -19,8 +19,8 @@ async def tts_endpoint(request: TTSRequest):
     """
     try:
         lang = request.lang or settings.DEFAULT_LANG
-        audio_base64 = await generate_tts(request.text, lang)
-        return {"audio": audio_base64}
+        audio_base64, visemes = await generate_tts(request.text, lang)
+        return {"audio": audio_base64, "visemes": visemes}
     except Exception as e:
         raise HTTPException(
             status_code=500,
