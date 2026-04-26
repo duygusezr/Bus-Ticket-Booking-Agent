@@ -76,7 +76,7 @@ export function getActiveAvatarUrl() {
  * @param {function} [onProgress] - Yükleme ilerleme callback'i
  * @returns {Promise<void>}
  */
-export function loadVRM(url, onProgress) {
+export function loadVRM(url, onProgress, yRotation = 0) {
     return new Promise((resolve, reject) => {
         // Eski modeli temizle
         if (currentVrm) {
@@ -91,6 +91,15 @@ export function loadVRM(url, onProgress) {
                 const vrm = gltf.userData.vrm;
                 VRMUtils.removeUnnecessaryVertices(gltf.scene);
                 VRMUtils.removeUnnecessaryJoints(gltf.scene);
+                // VRM 0.x modeller ters yönde yüklenir — rotateVRM0 ile düzelt
+                if (VRMUtils.rotateVRM0) {
+                    VRMUtils.rotateVRM0(vrm);
+                } else if (vrm.meta?.metaVersion === '0') {
+                    vrm.scene.rotation.y = Math.PI;
+                }
+                if (yRotation) vrm.scene.rotation.y += yRotation;
+                // Rotasyon sonrası pozisyonu sıfırla — fitCamera düzgün hizalsın
+                vrm.scene.position.set(0, 0, 0);
                 scene.add(vrm.scene);
                 currentVrm = vrm;
                 if (vrm.humanoid) {
@@ -164,6 +173,7 @@ export function loadVRM(url, onProgress) {
  */
 function _fitCameraToVRM(vrm) {
     vrm.scene.updateWorldMatrix(true, true);
+    vrm.scene.updateMatrixWorld(true);
 
     // ── Bounding box: X/Z ortalama + toplam boy ──────────────
     const box = new THREE.Box3().setFromObject(vrm.scene);

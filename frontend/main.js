@@ -96,6 +96,29 @@ micBtn?.addEventListener('touchstart', e => e.preventDefault(), { passive: false
 toggleSidebarBtn?.addEventListener('click', () => historySidebar?.classList.add('open'));
 closeSidebarBtn?.addEventListener('click',  () => historySidebar?.classList.remove('open'));
 
+// ─── Cinsiyet / Avatar Seçimi ─────────────────────────────
+
+const AVATARS = {
+    female: { model: './models/avatar.vrm',               voice: 'default', rotation: 0 },
+    male:   { model: './models/Male_Adult_11_facial.vrm', voice: 'male',    rotation: 0 },
+};
+
+const genderFemaleBtn = document.getElementById('gender-female');
+const genderMaleBtn   = document.getElementById('gender-male');
+
+async function _switchAvatar(gender) {
+    const cfg = AVATARS[gender];
+    if (!cfg) return;
+    genderFemaleBtn?.classList.toggle('active', gender === 'female');
+    genderMaleBtn?.classList.toggle('active',   gender === 'male');
+    localStorage.setItem('avatarVoice', cfg.voice);
+    try { await loadVRM(cfg.model, null, cfg.rotation); }
+    catch (e) { console.error('Avatar yüklenemedi:', e); }
+}
+
+genderFemaleBtn?.addEventListener('click', () => _switchAvatar('female'));
+genderMaleBtn?.addEventListener('click',   () => _switchAvatar('male'));
+
 // ─── Avatar Ayarları Modal ───────────────────────────────────────
 
 const avatarSettingsBtn  = document.getElementById('avatar-settings-btn');
