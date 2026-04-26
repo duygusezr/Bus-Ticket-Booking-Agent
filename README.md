@@ -520,8 +520,27 @@ Backend `http://localhost:8001` adresinde, frontend ise `http://localhost:3000` 
 
 Projenin canlı ortam dağıtımı (deployment) aktif olarak tamamlanmış olup şu platformlarda çalışmaktadır:
 
-- **Frontend (İstemci / Arayüz):** Vercel üzerinde barındırılmaktadır.
+- **Frontend (İstemci / Arayüz):** Cloudflare Pages üzerinde barındırılmaktadır.
 - **Backend (API ve WebSocket Servisleri):** Railway sunucuları üzerinde barındırılmaktadır.
+
+#### Frontend Platform Geçişi: Vercel → Cloudflare Pages
+
+Proje başlangıçta frontend katmanı **Vercel** üzerinde barındırılmaktaydı. Ancak **Nisan 2026'da Vercel**, üçüncü taraf bir AI aracı (Context.ai) üzerinden gerçekleştirilen bir **tedarik zinciri saldırısının (supply chain attack)** hedefi oldu. Saldırgan, ele geçirdiği bir Vercel çalışanının Google Workspace hesabı aracılığıyla iç sistemlere sızdı ve sınırlı sayıda müşteriye ait — `sensitive` işareti taşımayan — environment variable değerlerine erişti. Saldırı, Vercel'in deploy altyapısını veya `npm` paketlerini doğrudan etkilememiş olsa da olayın doğası gereği projede aşağıdaki önlemler alınmıştır:
+
+1. **API Anahtar Rotasyonu:** Google Gemini API anahtarı yenilenmiştir.
+2. **Backend Secret Rotasyonu:** Railway üzerindeki tüm environment variable'lar güncellenmiş ve eski değerler geçersiz kılınmıştır.
+3. **Platform Geçişi:** Frontend, ek bir güvenlik katmanı olarak **Vercel'den Cloudflare Pages'e** taşınmıştır.
+
+**Neden Cloudflare Pages?**
+
+| Kriter | Açıklama |
+| --- | --- |
+| **Edge Network Avantajı** | Cloudflare'in global CDN altyapısı, özellikle Türkiye'deki son kullanıcıların Railway üzerinde barındırılan backend'e açtığı WebSocket bağlantılarında daha düşük gecikme süresi (latency) sağlar. |
+| **Bandwidth Limiti Yok** | Vercel'in ücretsiz (Hobby) planındaki 100 GB/ay bandwidth kısıtlamasına karşılık Cloudflare Pages, kişisel projeler için herhangi bir bandwidth limiti uygulamaz. Bu, sesli etkileşim sırasında oluşan yüksek trafik için kritik bir avantajdır. |
+| **Yerleşik DDoS Koruması** | Cloudflare'in standart altyapısının bir parçası olarak frontend katmanına ek bir güvenlik katmanı sağlanır. |
+| **Build Performansı** | Statik frontend dağıtımı (Vanilla JS) için optimize edilmiş, hızlı bir build pipeline'ı sunar. |
+
+> **Not:** Proje, Vercel tarafından doğrudan etkilenen müşteriler arasında listelenmemiştir; ancak güvenlik prensibi gereği etkilenmiş varsayılarak önlem alınması tercih edilmiştir.
 
 ---
 
