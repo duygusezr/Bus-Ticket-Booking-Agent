@@ -270,11 +270,11 @@ Tüm sabitleri `frontend/js/audio.js` başında değiştirebilirsiniz:
 
 | Bileşen | Dosya | Açıklama |
 | --- | --- | --- |
-| **3D Avatar** | `js/avatar.js` | Three.js + @pixiv/three-vrm. VRM 1.0 formatında 3D karakter modeli. Göz kırpma, nefes alma, kafa hareketi, lip-sync animasyonları. Dinamik VRM yükleme (`loadVRM`) ve otomatik kamera hizalama (`_fitCameraToVRM`) destekli. |
-| **Ses & VAD** | `js/audio.js` | Web Audio API tabanlı ses çalma, VAD döngüsü, barge-in, eko koruması, MediaRecorder kayıt yönetimi. |
-| **Sohbet** | `js/chat.js` | WebSocket bağlantısı, mesaj gönderme, streaming metin render, sohbet geçmişi UI, çok dilli destek. |
-| **Giriş Noktası** | `main.js` | Tüm modülleri birleştirir, UI olay dinleyicilerini bağlar. Mikrofon toggle → `toggleVAD()`. Avatar ayarları modal'ı (VRM yükleme, cinsiyet/ses seçimi). |
-| **Stiller** | `style.css` | Responsive tasarım + VAD animasyonları (yeşil nabız: `vad-active`, hızlı nabız: `vad-active.recording`). |
+| **3D Avatar** | `js/avatar.js` | Three.js + @pixiv/three-vrm. VRM 1.0 / VRM 0.x formatında 3D karakter modeli. Göz kırpma, nefes alma, kafa hareketi, dudak senkronizasyonu animasyonları. Dinamik VRM yükleme (`loadVRM`) ve otomatik kamera hizalama (`_fitCameraToVRM`) destekli. ARKit blendshape sistemi, Rocketbox AA_VI viseme sistemi, AudioBuffer tabanlı gerçek zamanlı lip-sync. |
+| **Ses & VAD** | `js/audio.js` | Web Audio API tabanlı ses çalma, VAD döngüsü, barge-in, eko koruması, MediaRecorder kayıt yönetimi. AudioBuffer genliği analizi ile ses ön-işleme. |
+| **Sohbet** | `js/chat.js` | WebSocket bağlantısı, mesaj gönderme, streaming metin render, sohbet geçmişi UI, çok dilli destek. `resetChat()` ile avatar/dil değişiminde sohbet sıfırlama. |
+| **Giriş Noktası** | `main.js` | Tüm modülleri birleştirir, UI olay dinleyicilerini bağlar. Mikrofon toggle → `toggleVAD()`. Avatar ayarları modalı (VRM yükleme, cinsiyet/ses seçimi). Cinsiyet seçici butonları (♀/♂). |
+| **Stiller** | `style.css` | Responsive tasarım + VAD animasyonları (yeşil nabız: `vad-active`, hızlı nabız: `vad-active.recording`). Cinsiyet seçici buton stilleri. |
 
 ---
 
@@ -576,7 +576,213 @@ Proje başlangıçta frontend katmanı **Vercel** üzerinde barındırılmaktayd
 
 ---
 
-## 👤 Geliştirici
+## 🎭 3D Avatar Sistemi — Detaylı Açıklama
+
+### Karakter Modelleri
+
+| Model | Dosya | Format | Açıklama |
+| --- | --- | --- | --- |
+| **Kadın Asistan** | `models/avatar.vrm` | VRM 1.0 | Varsayılan karakter, kadın TTS sesi |
+| **Erkek Asistan** | `models/Male_Adult_11_facial.vrm` | VRM 0.x | Rocketbox tabanlı erkek karakter, erkek TTS sesi |
+
+Kullanıcı, avatar panelinin alt kısmındaki ♀/♂ butonlarıyla karakterler arasında geçiş yapabilir. Geçişte sohbet geçmişi otomatik sıfırlanır.
+
+**VRM 0.x Uyumluluğu:** `VRMUtils.rotateVRM0()` ile VRM 0.x modeller otomatik olarak kameraya dönük hale getirilir. Yükleme sonrasında `vrm.scene.position.set(0,0,0)` ile pozisyon sıfırlanarak `_fitCameraToVRM` doğru hizalamayı yapar.
+
+---
+
+### Lip-Sync Sistemi (Dudak Senkronizasyonu)
+
+Sistem, **AudioBuffer tabanlı gerçek zamanlı fonem zamanlama** yöntemi kullanır. Frekans analizi yaklaşımına göre çok daha doğal ve sese tam senkronize dudak hareketleri sağlar.
+
+**Çalışma Prensibi:**
+
+```text
+TTS Sesi (Base64 MP3)
+    │
+    ▼
+audioBuffer = decodeAudioData()
+    │
+    ▼
+RMS Genlik Analizi (20ms pencere)
+    ├── Genlik < max×0.08 → Sessizlik → Ağız Kapalı (viseme 0)
+    └── Genlik ≥ eşik → Konuşma → Fonem Ata
+    │
+    ▼
+textToVisemeIndices(spokenText)
+    │  (Her karakter → AA_VI index)
+    ▼
+speechFrameCount / totalSpeechFrames × phonemes.length
+    │  (Sesli bölgelere fonemler eşit dağıtılır)
+    ▼
+setTimeout() zinciri → applyRocketboxViseme(index)
+    │  (Değişim olduğunda timer eklenir — minimum timer sayısı)
+    ▼
+updateVisemeLerp(dt) → morphTargetInfluences[i]
+    (Her frame ~55ms lerp ile yumuşak geçiş)
+```
+
+**Rocketbox AA_VI Viseme Seti (15 blendshape):**
+
+| Index | Blendshape | Harfler |
+| --- | --- | --- |
+| 0 | AA_VI_00_Sil | Sessizlik, boşluk, noktalama |
+| 1 | AA_VI_01_PP | b, p, m (dudak kapanır) |
+| 2 | AA_VI_02_FF | f, v (diş-dudak) |
+| 4 | AA_VI_04_DD | d, t, n, h |
+| 5 | AA_VI_05_KK | k, g, ğ, c |
+| 6 | AA_VI_06_CH | ş, ç, j |
+| 7 | AA_VI_07_SS | s, z |
+| 8 | AA_VI_08_nn | l |
+| 9 | AA_VI_09_RR | r |
+| 10 | AA_VI_10_aa | a, â |
+| 11 | AA_VI_11_E | e |
+| 12 | AA_VI_12_I | ı, i, y |
+| 13 | AA_VI_13_O | o, ö |
+| 14 | AA_VI_14_U | u, ü, w |
+
+**Ses Bitiş Senkronizasyonu:** `source.onended` tetiklendiğinde `resetVisemeImmediate()` tüm blendshape değerlerini o frame'de sıfırlar — lerp beklenmez, ağız anında kapanır.
+
+---
+
+### Yüz İfadesi Sistemi (ARKit Blendshape'leri)
+
+Rocketbox modelinin ARKit (AK_ prefix'li) blendshape'leri doğrudan kontrol edilerek dinamik yüz ifadeleri oluşturulur.
+
+**Kaş Hareketleri (`_updateBrow`):**
+
+| Durum | Blendshape | Değer | Frekans |
+| --- | --- | --- | --- |
+| Nötr | — | 0 | %35 |
+| İç kaş kalkışı (düşünme/soru) | BrowInnerUp | 0.25–0.45 | %20 |
+| Tam kaş kaldırma (vurgu) | BrowInnerUp + BrowOuterUp | 0.15–0.35 | %15 |
+| Kaş çatma (odaklanma) | BrowDownLeft/Right | 0.12–0.22 | %12 |
+| Hafif dalga | İç + Dış | 0.08 | %18 |
+
+**Duchenne Gülümseme (`_updateCheekSquint`):**
+Idle smile değeriyle orantılı olarak `CheekSquintLeft/Right` blendshape'leri aktif edilir. Gerçek bir gülümsemede göz altı kasları da çalışır — bu detay karakteri yapay görünmekten kurtarır.
+
+**Göz Kırpma (`_startBlinking`):**
+- Normal kırpma: ~95ms
+- Yavaş kırpma (%20 ihtimalle): ~220ms — uykuluk/düşünceli an hissi
+- Çift kırpma (%25 ihtimalle): arka arkaya iki hızlı kırpma
+
+**Idle Gülümseme:** Konuşma yokken hedef değer 0.18 — dudak köşeleri hafifçe kalklar, dişler görünmez.
+
+---
+
+### Göz Bakış Yönü
+
+VRM'in `lookAt` API'si yerine ARKit `EyeLook*` blendshape'leri direkt kontrol edilir. Bu yaklaşım, VRM mapping'i olmayan Rocketbox modellerde de çalışır.
+
+```javascript
+// Tüm EyeLookIn/Out/Up/Down blendshape'leri 0 = kameraya düz bakış
+_setFace('eyeLookInL',  0); _setFace('eyeLookOutL', 0);
+_setFace('eyeLookInR',  0); _setFace('eyeLookOutR', 0);
+_setFace('eyeLookDownL', 0); _setFace('eyeLookDownR', 0);
+_setFace('eyeLookUpL',  0); _setFace('eyeLookUpR',  0);
+```
+
+---
+
+### Kafa Hareketi
+
+Rastgele hedef seçip lerp ile gitme yaklaşımı yerine **üst üste sine dalgaları** kullanılır:
+
+```javascript
+_idleHead.y = Math.sin(elapsed * 0.19) * 0.022 + Math.sin(elapsed * 0.07) * 0.014;
+_idleHead.x = Math.sin(elapsed * 0.13) * 0.012 + Math.sin(elapsed * 0.31) * 0.006;
+```
+
+Farklı frekanslı iki dalga üst üste binince Lissajous benzeri öngörülemeyen ama **tamamen akıcı** bir yol oluşur. Maksimum sapma ±2° — görünmez ama organik hissettirir. Konuşma/dinleme sırasında kafa yavaşça merkeze döner.
+
+---
+
+### Nefes Animasyonu
+
+Sadece göğüs/üst göğüs kemikleri hafifçe öne açılır — vücut öne-geri gitmez:
+
+```javascript
+const b = (Math.sin(elapsed * 0.35) + 1) / 2; // 0–1 arası
+cachedBones.upperChest.rotation.z = b * 0.012; // Öne şişme
+cachedBones.chest.rotation.z      = b * 0.010;
+```
+
+Omuzlar hafifçe kalkıp iner, boyun çok minimal hareket eder.
+
+---
+
+### GLTF Animasyon Desteği
+
+VRM dosyası içinde GLTF animasyonu varsa (`idle`, `breathing`, `stand`, `loop` adlarından biri) otomatik olarak `THREE.AnimationMixer` ile oynatılır:
+
+```javascript
+const mixer = new THREE.AnimationMixer(vrm.scene);
+const clip  = gltf.animations.find(a => /idle|breathing|stand|loop/i.test(a.name));
+mixer.clipAction(clip).play();
+vrm._mixer = mixer;
+```
+
+---
+
+## 🔄 Sohbet Sıfırlama (resetChat)
+
+`chat.js`'deki `resetChat()` fonksiyonu şu durumlarda otomatik çağrılır:
+
+| Tetikleyici | Sonuç |
+| --- | --- |
+| ♀ → ♂ geçişi | Sohbet temizlenir, yeni karakterle fresh start |
+| ♂ → ♀ geçişi | Aynı şekilde |
+| TR → EN geçişi | Sohbet temizlenir, İngilizce hoş geldin mesajı gösterilir |
+| EN → TR geçişi | Sohbet temizlenir, Türkçe hoş geldin mesajı gösterilir |
+
+`resetChat()` şunları yapar:
+- `stopAudio()` → Avatar susturulur
+- `isSending = false` → Sıkışmış istek kilidi açılır  
+- `chatHistory.length = 0` → Backend geçmişi sıfırlanır
+- `historyList.innerHTML = ''` → Ekran temizlenir
+- Seçili dilde hoş geldin mesajı yeniden render edilir
+
+---
+
+## 🎨 UI Değişiklikleri
+
+### "Müşteri Asistanı" Başlığı
+
+Avatarın üzerinde görünen başlık, chat panelinin sol üst köşesine (`chat-header`) taşındı. Avatar alanı temiz kaldı.
+
+### Cinsiyet Seçici Butonlar
+
+Avatar panelinin alt ortasında ♀ ve ♂ butonları eklendi:
+
+```html
+<div class="gender-switcher">
+    <button class="gender-btn active" id="gender-female">♀</button>
+    <button class="gender-btn"         id="gender-male">♂</button>
+</div>
+```
+
+Aktif buton beyaz çerçeve + blur arka plan ile vurgulanır. Geçiş anında sohbet otomatik sıfırlanır ve ilgili TTS sesi (kadın/erkek) yüklenir.
+
+---
+
+## 📦 Güncellenmiş Backend TTS
+
+`tts_service.py`, Edge-TTS `stream()` çıktısındaki `WordBoundary` event'lerini toplar ve frontend'e iletir:
+
+```python
+elif ctype == "WordBoundary":
+    offset_ms   = int(chunk.get("offset",   0)) // 10_000  # 100ns → ms
+    duration_ms = int(chunk.get("duration", 0)) // 10_000
+    word_text   = chunk.get("text", "")
+    word_boundaries.append([offset_ms, duration_ms, word_text])
+```
+
+WordBoundary verisi mevcutsa frontend bunu kullanır; yoksa `AudioBuffer` tabanlı fallback devreye girer. Her iki durumda da lip-sync çalışır.
+
+---
+
+
 
 Bu proje, yapay zekâ destekli konuşma arayüzlerinin gerçek dünya uygulamalarındaki potansiyelini göstermek amacıyla geliştirilmiştir.
 
