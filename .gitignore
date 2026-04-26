@@ -31,3 +31,8 @@ yarn-error.log*
 # Large files (optional, but good to keep in mind)
 # house_bg.jpg
 # models/*.vrm
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
