@@ -663,6 +663,7 @@ Rocketbox modelinin ARKit (AK_ prefix'li) blendshape'leri doğrudan kontrol edil
 Idle smile değeriyle orantılı olarak `CheekSquintLeft/Right` blendshape'leri aktif edilir. Gerçek bir gülümsemede göz altı kasları da çalışır — bu detay karakteri yapay görünmekten kurtarır.
 
 **Göz Kırpma (`_startBlinking`):**
+
 - Normal kırpma: ~95ms
 - Yavaş kırpma (%20 ihtimalle): ~220ms — uykuluk/düşünceli an hissi
 - Çift kırpma (%25 ihtimalle): arka arkaya iki hızlı kırpma
@@ -737,8 +738,9 @@ vrm._mixer = mixer;
 | EN → TR geçişi | Sohbet temizlenir, Türkçe hoş geldin mesajı gösterilir |
 
 `resetChat()` şunları yapar:
+
 - `stopAudio()` → Avatar susturulur
-- `isSending = false` → Sıkışmış istek kilidi açılır  
+- `isSending = false` → Sıkışmış istek kilidi açılır.
 - `chatHistory.length = 0` → Backend geçmişi sıfırlanır
 - `historyList.innerHTML = ''` → Ekran temizlenir
 - Seçili dilde hoş geldin mesajı yeniden render edilir
@@ -781,8 +783,6 @@ elif ctype == "WordBoundary":
 WordBoundary verisi mevcutsa frontend bunu kullanır; yoksa `AudioBuffer` tabanlı fallback devreye girer. Her iki durumda da lip-sync çalışır.
 
 ---
-
-
 
 Bu proje, yapay zekâ destekli konuşma arayüzlerinin gerçek dünya uygulamalarındaki potansiyelini göstermek amacıyla geliştirilmiştir.
 
