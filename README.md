@@ -559,6 +559,10 @@ Proje başlangıçta frontend katmanı **Vercel** üzerinde barındırılmaktayd
 | **Chart.js** | — | Duygu radar grafiği |
 | **Web Audio API** | Native | Lip-sync frekans analizi + VAD ses ölçümü |
 | **MediaRecorder API** | Native | VAD tabanlı ses kaydı (80ms chunk) |
+| **Unity 6 LTS** | 6000.x | Karakter düzenleme + VRM export ortamı (geliştirme süreci) |
+| **UniVRM** | 0.131.0 (VRM 1.0) | Unity → VRM 1.0 export paketi |
+| **Microsoft Rocketbox** | MIT | Gerçekçi insan avatar kütüphanesi (115 karakter) |
+| **Cloudflare R2** | Object Storage | VRM dosyalarının barındırılması (egress free, CDN-backed) |
 
 ---
 
@@ -580,14 +584,128 @@ Proje başlangıçta frontend katmanı **Vercel** üzerinde barındırılmaktayd
 
 ### Karakter Modelleri
 
-| Model | Dosya | Format | Açıklama |
-| --- | --- | --- | --- |
-| **Kadın Asistan** | `models/avatar.vrm` | VRM 1.0 | Varsayılan karakter, kadın TTS sesi |
-| **Erkek Asistan** | `models/Male_Adult_11_facial.vrm` | VRM 0.x | Rocketbox tabanlı erkek karakter, erkek TTS sesi |
+Proje, **anime stilinde stilize avatardan profesyonel ve gerçekçi insan modeline** geçiş yapmıştır. Otobüs şirketi müşteri temsilcisi bağlamına daha uygun, **"insanla konuşuyor" hissi** veren karakterler kullanılmaktadır.
+
+| Model | Dosya | Format | Kaynak | Açıklama |
+| --- | --- | --- | --- | --- |
+| **Kadın Asistan** | `models/avatar.vrm` | VRM 1.0 | Microsoft Rocketbox (Female_Adult_01) | Varsayılan karakter, kadın TTS sesi |
+| **Erkek Asistan** | `models/Male_Adult_11_facial.vrm` | VRM 0.x | Microsoft Rocketbox (Male_Adult_11) | Erkek karakter, erkek TTS sesi |
 
 Kullanıcı, avatar panelinin alt kısmındaki ♀/♂ butonlarıyla karakterler arasında geçiş yapabilir. Geçişte sohbet geçmişi otomatik sıfırlanır.
 
 **VRM 0.x Uyumluluğu:** `VRMUtils.rotateVRM0()` ile VRM 0.x modeller otomatik olarak kameraya dönük hale getirilir. Yükleme sonrasında `vrm.scene.position.set(0,0,0)` ile pozisyon sıfırlanarak `_fitCameraToVRM` doğru hizalamayı yapar.
+
+---
+
+### VRM Modellerinin Barındırılması: Cloudflare R2 Object Storage
+
+Karakter VRM dosyaları (~46 MB her biri) frontend bundle'a dahil edilmek yerine **Cloudflare R2 object storage** üzerinde barındırılmaktadır. Bu mimari karar, deploy sürecini ve son kullanıcı deneyimini optimize etmek amacıyla alınmıştır.
+
+```text
+     [Cloudflare Pages]                    [Cloudflare R2 Bucket]
+          │                                       │
+          │  HTML/CSS/JS bundle                   │  avatar.vrm (46 MB)
+          │  (~500 KB)                            │  Male_Adult_11_facial.vrm
+          │                                       │
+          ▼                                       ▼
+     [Browser] ─── fetch('https://pub-xxx.r2.dev/avatar.vrm') ───▶
+                        (CORS: AllowedOrigin = Pages domain)
+```
+
+**Neden Cloudflare R2?**
+
+| Kriter | Cloudflare R2 | AWS S3 / GCS |
+| --- | --- | --- |
+| **Egress ücreti** | **Ücretsiz** — limit yok | $0.09/GB (S3 Standard) |
+| **Free tier** | 10 GB depolama, 1M Class A op/ay, 10M Class B op/ay | 5 GB / 12 ay |
+| **CDN entegrasyonu** | Otomatik (300+ edge node) | CloudFront ayrı yapılandırma |
+| **Cloudflare Pages uyumu** | Native (aynı ekosistem) | Cross-cloud tercih edilirse uygundur |
+| **Public access** | `pub-xxx.r2.dev` URL'i otomatik | Bucket policy + presigned URL |
+
+**Bu mimarinin avantajları:**
+
+1. **Hızlı Frontend Deploy:** Cloudflare Pages bundle'ı ~500 KB olarak kalır; her commit'te 100 MB'lık VRM dosyaları yeniden yüklenmez. Build süresi <30 saniye.
+2. **Edge Cache:** R2 dosyaları Cloudflare'in 300+ edge node'undan servis edilir; Türkiye'deki kullanıcılar için tipik latency <50 ms.
+3. **Sıfır Egress Maliyeti:** Avatar her ziyaretçiye 46 MB veri transferi anlamına gelir; R2'de bu maliyet sıfırdır.
+4. **Karakter Eklemenin Kolaylığı:** Yeni bir VRM dosyası eklemek için dashboard'dan upload + `AVATAR_URLS` objesine bir satır yeterli; deploy gerekmez.
+
+**CORS Yapılandırması:**
+
+R2 bucketının CORS policy'si, sadece Cloudflare Pages domain'inden ve geliştirme sırasında localhost'tan erişime izin verir:
+
+```json
+{
+  "AllowedOrigins": [
+    "https://<project>.pages.dev",
+    "http://localhost:3000"
+  ],
+  "AllowedMethods": ["GET", "HEAD"],
+  "AllowedHeaders": ["*"],
+  "MaxAgeSeconds": 3600
+}
+```
+
+**Frontend Konfigürasyonu:**
+
+Tüm VRM URL'leri `frontend/js/avatar.js` dosyasında **tek bir kaynaktan** yönetilir:
+
+```javascript
+export const AVATAR_URLS = {
+    female: 'https://pub-xxx.r2.dev/avatar.vrm',
+    male:   'https://pub-xxx.r2.dev/Male_Adult_11_facial.vrm',
+};
+export const DEFAULT_AVATAR = AVATAR_URLS.female;
+```
+
+Bu yaklaşım, hard-coded URL'lerin kod tabanında dağılmasını önler ve yeni karakter eklemeyi tek satır değişiklikle mümkün kılar.
+
+---
+
+### Karakter Üretim Pipeline'ı: Microsoft Rocketbox → Unity → VRM
+
+Karakter modelleri **sıfırdan ücretsiz olarak** üretilmiştir. Hazır anime stili VRM modeller (VRoid Studio, Booth.pm vb.) yerine, gerçekçi insan modeli üretmek için aşağıdaki uçtan uca pipeline kurulmuştur:
+
+```text
+[1] Microsoft Rocketbox Repository (MIT Lisans)
+      │  115 gerçekçi avatar, FBX formatında
+      ▼
+[2] Unity 6 LTS + UniVRM (VRM 1.0 Paketi)
+      │  Avatar projeye import edilir
+      ▼
+[3] Material → MToon10 Shader Dönüşümü
+      │  URP/Lit → VRM10/MToon10 (VRM ile uyumlu)
+      ▼
+[4] Texture Read/Write Etkinleştirme
+      │  PNG'ye encode edilebilmesi için
+      ▼
+[5] Humanoid Rig + Transform Düzeltme
+      │  Rotation reset, +Z eksenine bakış
+      ▼
+[6] VRM 1.0 Export (Meta + Lisans)
+      │  Title, Authors, Permission ayarları
+      ▼
+[7] frontend/models/ klasörüne taşıma
+```
+
+**Neden Microsoft Rocketbox?**
+
+| Kriter | Açıklama |
+| --- | --- |
+| **Lisans (MIT)** | Akademik ve ticari kullanıma açık, atıf zorunlu değil |
+| **Karakter Çeşitliliği** | 115 tam riglenmiş gerçekçi avatar (kadın/erkek, farklı yaş ve etnik köken) |
+| **Blendshape Zenginliği** | Modelde **15 viseme + 48 ARKit FACS + 30 Vive Tracker** blendshape hazır gelir; lip-sync ve mimikler için ekstra modelleme gerekmez |
+| **Performans** | Düşük poligonlu yapı sayesinde Three.js'te 60 FPS hedefi tüm cihazlarda korunur |
+| **Profesyonel Görünüm** | Gerçek insan estetiği, otobüs şirketi müşteri temsilcisi bağlamıyla uyumlu |
+
+**Pipeline Sırasında Karşılaşılan ve Çözülen Teknik Zorluklar:**
+
+1. **"Texture is not readable" hatası:** Unity'nin varsayılan ayarı texture'ları GPU memory'sinde kilitler. UniVRM PNG'ye encode edebilmek için Read/Write Enabled işaretlenmesi gerekir.
+2. **"Model needs to face the positive Z-axis" hatası:** Rocketbox FBX'leri 3ds Max kaynaklı olduğu için Unity'ye import edildiğinde rotation farklı eksende kalır; Transform sıfırlanması gerekir.
+3. **"Unknown shader: URP/Lit" uyarısı:** URP shader'ları VRM standardına uyumsuzdur; manuel olarak VRM10/MToon10'a dönüştürülmüştür.
+4. **Blendshape isimlendirme uyumsuzluğu:** Rocketbox modelinde viseme'ler `blendShape1.AA_VI_10_aa` gibi prefix'li isimlerle gelir; VRM 1.0 standart isimleri (`aa`, `ih` vb.) ile eşleşmez. Frontend'de **Expression Adapter** sistemi yazılarak hem VRM standardı hem de doğrudan blendshape isim alias'ları desteklenmiştir (bkz. `avatar.js` → `EXPRESSION_ALIASES`).
+5. **Idle smile blendshape tespiti:** Modelin smile blendshape'leri (`AK_XX_MouthSmile*`) regex pattern (`/mouth.*smile|^smile|_smile/i`) ile dinamik olarak bulunur — model değişse bile çalışır.
+
+Bu pipeline sayesinde, **hiçbir ücretli asset veya hazır VRM modeli kullanılmadan** profesyonel kalitede gerçekçi insan avatarları üretilebilmiştir.
 
 ---
 

@@ -42,6 +42,22 @@ dirLight.position.set(1, 1, 1).normalize();
 scene.add(dirLight);
 scene.add(new THREE.AmbientLight(0xffffff, 1.0));
 
+// ─── VRM URL Config ──────────────────────────────────────────
+// Karakter VRM dosyaları Cloudflare R2'de barındırılır.
+//   • Public bucket: pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev
+//   • CORS: Allowed origins → Cloudflare Pages domain'i + localhost (test için)
+//   • Bandwidth limiti yok — egress free (S3'ün aksine)
+//
+// Yeni bir karakter eklemek için:
+//   1. VRM dosyasını R2 bucket'a yükle (Cloudflare Dashboard → R2 → Upload)
+//   2. Aşağıdaki tabloya bir satır ekle
+//   3. main.js'te ilgili butonu bağla — başka değişiklik gerekmez
+export const AVATAR_URLS = {
+    female: 'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/avatar.vrm',
+    male:   'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/Male_Adult_11_facial.vrm',
+};
+export const DEFAULT_AVATAR = AVATAR_URLS.female;
+
 // ─── VRM durumu ───────────────────────────────────────────────
 
 export let currentVrm = undefined;
@@ -67,7 +83,7 @@ export function getActiveAvatarUrl() {
     // Blob URL kalıcı değil — initAvatar() bunu yönetir.
     // Bu fonksiyon sadece isim göstermek için kullanılır.
     const name = localStorage.getItem('avatarFileName');
-    return name ? `[custom: ${name}]` : './models/character.vrm';
+    return name ? `[custom: ${name}]` : DEFAULT_AVATAR;
 }
 
 /**
@@ -230,9 +246,10 @@ function _fitCameraToVRM(vrm) {
 const _lookAtTarget = new THREE.Object3D();
 scene.add(_lookAtTarget);
 
-loadVRM('https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/avatar.vrm', p => {
+loadVRM(DEFAULT_AVATAR, p => {
     console.log('Yükleniyor...', (100 * p.loaded / p.total).toFixed(2), '%');
-}).catch(() => {
+}).catch(err => {
+    console.error('VRM yükleme başarısız:', err);
     const sub = document.getElementById('subtitle');
     if (sub) sub.textContent = "Model yüklenemedi. İnternet bağlantınızı kontrol edin.";
 });
