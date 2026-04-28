@@ -100,8 +100,8 @@ closeSidebarBtn?.addEventListener('click',  () => historySidebar?.classList.remo
 // ─── Cinsiyet / Avatar Seçimi ─────────────────────────────
 
 const AVATARS = {
-    female: { model: 'https://github.com/duygusezr/Bus-Ticket-Booking-Agent/releases/download/v1.0/avatar.vrm?raw=1',               voice: 'default', rotation: 0 },
-    male:   { model: 'https://github.com/duygusezr/Bus-Ticket-Booking-Agent/releases/download/v1.0/Male_Adult_11_facial.vrm?raw=1', voice: 'male',    rotation: 0 },
+    female: { model: 'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/avatar.vrm',               voice: 'default', rotation: 0 },
+    male:   { model: 'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/Male_Adult_11_facial.vrm', voice: 'male',    rotation: 0 },
 };
 
 const genderFemaleBtn = document.getElementById('gender-female');
@@ -253,7 +253,7 @@ avatarResetBtn?.addEventListener('click', async () => {
     if (avatarProgressFill) avatarProgressFill.style.width = '0%';
     if (avatarProgressText) avatarProgressText.textContent = 'Yükleniyor...';
     try {
-        await loadVRM('https://github.com/duygusezr/Bus-Ticket-Booking-Agent/releases/download/v1.0/avatar.vrm?raw=1', p => {
+        await loadVRM('https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/avatar.vrm', p => {
             const pct = p.total > 0 ? Math.round((p.loaded / p.total) * 100) : 0;
             if (avatarProgressFill) avatarProgressFill.style.width = pct + '%';
         });
