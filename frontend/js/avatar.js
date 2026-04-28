@@ -230,11 +230,11 @@ function _fitCameraToVRM(vrm) {
 const _lookAtTarget = new THREE.Object3D();
 scene.add(_lookAtTarget);
 
-loadVRM('./models/avatar.vrm', p => {
+loadVRM('https://github.com/duygusezr/Bus-Ticket-Booking-Agent/releases/download/v1.0/avatar.vrm?raw=1', p => {
     console.log('Yükleniyor...', (100 * p.loaded / p.total).toFixed(2), '%');
 }).catch(() => {
     const sub = document.getElementById('subtitle');
-    if (sub) sub.textContent = "Model yüklenemedi. 'models/avatar.vrm' dosyasını koyun.";
+    if (sub) sub.textContent = "Model yüklenemedi. İnternet bağlantınızı kontrol edin.";
 });
 
 
