@@ -35,10 +35,12 @@ COMPOUND_MAP = {
 
 
 def normalize_text(text: str) -> str:
-    """Lowercase + Turkish char normalization + collapse whitespace."""
-    t = (text or "").lower()
-    for src, dst in [("ı","i"),("ş","s"),("ğ","g"),("ü","u"),("ö","o"),("ç","c"),("İ","i"),("Ş","s"),("Ğ","g"),("Ü","u"),("Ö","o"),("Ç","c")]:
+    """Turkish char normalization + Lowercase + collapse whitespace."""
+    t = text or ""
+    for src, dst in [("ı","i"),("ş","s"),("ğ","g"),("ü","u"),("ö","o"),("ç","c"),
+                     ("İ","i"),("Ş","s"),("Ğ","g"),("Ü","u"),("Ö","o"),("Ç","c"), ("I", "i")]:
         t = t.replace(src, dst)
+    t = t.lower()
     return re.sub(r"\s+", " ", t).strip()
 
 
