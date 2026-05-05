@@ -17,14 +17,14 @@
 import { setSpeaking, setListening, setActiveSource, setAnalyser, stopLipSync, applyRocketboxViseme, resetVisemeImmediate, textToVisemeIndices, setVisemeMode } from './avatar.js';
 
 // ─── Sabitler ─────────────────────────────────────────────────
-const VAD_THRESHOLD            = 20;   // Normal dinleme eşiği (eski: 25)
-const BARGE_IN_BASE            = 8;    // Mutlak minimum barge-in eşiği (eski: 18)
-const BARGE_IN_SPIKE_DELTA     = 12;   // Noise floor + bu değer = dinamik eşik
+const VAD_THRESHOLD            = 40;   // Normal dinleme eşiği (artırıldı)
+const BARGE_IN_BASE            = 25;   // Mutlak minimum barge-in eşiği (artırıldı)
+const BARGE_IN_SPIKE_DELTA     = 20;   // Noise floor + bu değer = dinamik eşik (artırıldı)
 const NOISE_FLOOR_SAMPLES      = 40;   // Kaç frame'in ortalaması noise floor
 const SILENCE_DURATION_MS      = 1200;
 const SILENCE_DURATION_NUMERIC = 2500;
 const MIN_SPEECH_MS            = 200;  // Biraz daha kısa (eski: 250)
-const VAD_CONFIRM_FRAMES       = 1;
+const VAD_CONFIRM_FRAMES       = 4;
 const POST_SPEECH_COOLDOWN_MS  = 600;  // Biraz kısaltıldı (eski: 800)
 const AVATAR_SPEAKING_LINGER_MS   = 300;  // Ses parçaları arası geçişte bekleme
 
@@ -283,7 +283,7 @@ function vadLoop() {
             aboveThresholdFrames++;
             if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
 
-            if (aboveThresholdFrames >= 2) {
+            if (aboveThresholdFrames >= 5) {
                 // Barge-in: AI'yı durdur, kullanıcıyı kaydet
                 stopAvatar();
                 vadCooldownUntil = 0; // barge-in sonrası cooldown yok
