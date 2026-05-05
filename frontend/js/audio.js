@@ -17,13 +17,13 @@
 import { setSpeaking, setListening, setActiveSource, setAnalyser, stopLipSync, applyRocketboxViseme, resetVisemeImmediate, textToVisemeIndices, setVisemeMode } from './avatar.js';
 
 // ─── Sabitler ─────────────────────────────────────────────────
-const VAD_THRESHOLD            = 40;   // Normal dinleme eşiği
+const VAD_THRESHOLD            = 55;   // Normal dinleme eşiği
 const BARGE_IN_BASE            = 45;   // Mutlak minimum barge-in eşiği (ekstra artırıldı)
 const BARGE_IN_SPIKE_DELTA     = 40;   // Noise floor + bu değer = dinamik eşik (ekstra artırıldı)
 const NOISE_FLOOR_SAMPLES      = 40;   // Kaç frame'in ortalaması noise floor
 const SILENCE_DURATION_MS      = 1200;
 const SILENCE_DURATION_NUMERIC = 2500;
-const MIN_SPEECH_MS            = 200;  
+const MIN_SPEECH_MS            = 600;  
 const VAD_CONFIRM_FRAMES       = 4;
 const BARGE_IN_CONFIRM_FRAMES  = 8;    // Kendi sesini kesmemesi için frame süresi uzatıldı
 const POST_SPEECH_COOLDOWN_MS  = 600;  // Biraz kısaltıldı (eski: 800)
@@ -52,6 +52,8 @@ let vadRafId             = null;
 let isRecording          = false;
 let mediaRecorder        = null;
 let audioChunks          = [];
+let preRollChunks        = [];
+let firstChunk           = null;
 let silenceTimer         = null;
 let speechStartTime      = null;
 let aboveThresholdFrames = 0;
@@ -183,21 +185,12 @@ function _scheduleAvatarEnd() {
 // ─── VAD kaydını başlat ───────────────────────────────────────
 
 function startVadRecording() {
-    if (isRecording || !micStream) return;
+    if (isRecording || !micStream || !mediaRecorder) return;
     isRecording = true;
-    audioChunks = [];
+    
+    // Header ve pre-roll kayıtlarını birleştirerek başlangıcı kurtar
+    audioChunks = firstChunk ? [firstChunk, ...preRollChunks] : [...preRollChunks];
     speechStartTime = Date.now();
-
-    try {
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-            ? 'audio/webm;codecs=opus' : 'audio/webm';
-        mediaRecorder = new MediaRecorder(micStream, { mimeType });
-    } catch {
-        mediaRecorder = new MediaRecorder(micStream);
-    }
-
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    mediaRecorder.start(80);
 
     if (_micBtn) _micBtn.classList.add('recording');
     if (_subtitle) _subtitle.textContent = getSubtitleText('recording');
@@ -206,35 +199,38 @@ function startVadRecording() {
 // ─── VAD kaydını durdur ve STT'ye gönder ─────────────────────
 
 function stopVadRecording() {
-    if (!isRecording || !mediaRecorder) return;
+    if (!isRecording) return;
     isRecording = false;
 
     const elapsed = Date.now() - (speechStartTime || 0);
     if (_micBtn) _micBtn.classList.remove('recording');
 
-    mediaRecorder.onstop = async () => {
-        if (elapsed < MIN_SPEECH_MS) {
-            if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
-            return;
-        }
+    // Çok kısa sesi tamamen kes
+    if (elapsed < MIN_SPEECH_MS) {
+        if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
+        return;
+    }
 
-        const mimeType = mediaRecorder.mimeType || 'audio/webm';
-        const blob = new Blob(audioChunks, { type: mimeType });
-        if (blob.size < 200) {
-            if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
-            return;
-        }
+    const mimeType = mediaRecorder ? (mediaRecorder.mimeType || 'audio/webm') : 'audio/webm';
+    const currentChunks = [...audioChunks];
+    const blob = new Blob(currentChunks, { type: mimeType });
+    
+    if (blob.size < 30000) {
+        if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
+        return;
+    }
 
-        if (_subtitle) _subtitle.textContent = getSubtitleText('processing');
+    if (_subtitle) _subtitle.textContent = getSubtitleText('processing');
 
-        const formData = new FormData();
-        formData.append('file', blob, 'recording.webm');
-        formData.append('lang', _getLang());
-        const historyList = document.getElementById('history-list');
-        const aiItems = historyList?.querySelectorAll('.history-item.ai .content');
-        const lastAssistant = aiItems?.length ? aiItems[aiItems.length - 1].textContent : '';
-        formData.append('last_assistant', lastAssistant.slice(0, 300));
+    const formData = new FormData();
+    formData.append('file', blob, 'recording.webm');
+    formData.append('lang', _getLang());
+    const historyList = document.getElementById('history-list');
+    const aiItems = historyList?.querySelectorAll('.history-item.ai .content');
+    const lastAssistant = aiItems?.length ? aiItems[aiItems.length - 1].textContent : '';
+    formData.append('last_assistant', lastAssistant.slice(0, 300));
 
+    (async () => {
         try {
             const res = await fetch(`${_apiBase}/api/stt`, { method: 'POST', body: formData });
             if (res.ok) {
@@ -258,9 +254,7 @@ function stopVadRecording() {
                 ? getSubtitleText('noBackend')
                 : getSubtitleText('listening');
         }
-    };
-
-    try { if (mediaRecorder.state !== 'inactive') mediaRecorder.stop(); } catch (_) {}
+    })();
 }
 
 // ─── VAD ana döngüsü ──────────────────────────────────────────
@@ -268,7 +262,14 @@ function stopVadRecording() {
 function vadLoop() {
     if (!vadActive) return;
 
-    const volume    = getMicVolume();
+    let volume    = getMicVolume();
+    
+    // BONUS (çok kritik fix): Dış sesleri (dip gürültüleri) sıfırla
+    const MIN_VALID_VOLUME = 45;
+    if (volume < MIN_VALID_VOLUME) {
+        volume = 0; // return yaparsak döngü durur, bu yüzden sesi sıfırlıyoruz!
+    }
+
     const silenceDuration = _isNumericContext()
         ? SILENCE_DURATION_NUMERIC
         : SILENCE_DURATION_MS;
@@ -566,6 +567,36 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, getLang, subtitle
         micDataArray = new Uint8Array(micAnalyser.frequencyBinCount);
         micSource.connect(micAnalyser);
         // micAnalyser → destination'a BAĞLANMIYOR → geri besleme yok
+
+        // Sürekli MediaRecorder Başlat (Pre-roll Buffer için)
+        try {
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus' : 'audio/webm';
+            mediaRecorder = new MediaRecorder(micStream, { mimeType });
+        } catch {
+            mediaRecorder = new MediaRecorder(micStream);
+        }
+
+        preRollChunks = [];
+        firstChunk = null;
+
+        mediaRecorder.ondataavailable = e => {
+            if (e.data.size > 0) {
+                if (!firstChunk) firstChunk = e.data; // header'ı koru
+                
+                preRollChunks.push(e.data);
+                
+                // son 500-750ms'i sakla
+                if (preRollChunks.length > 3) {
+                    preRollChunks.shift();
+                }
+
+                if (isRecording) {
+                    audioChunks.push(e.data);
+                }
+            }
+        };
+        mediaRecorder.start(250); // chunk büyütüldü
 
         vadActive = true;
         setListening(true);
