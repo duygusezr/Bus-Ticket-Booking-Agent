@@ -13,7 +13,8 @@ const canvas = document.getElementById('canvas');
 const canvasContainer = document.getElementById('canvas-container');
 
 export const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+// Mobil cihazlarda WebGL bellek çökmesini önlemek için pixelRatio maksimum 2 ile sınırlandırıldı
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 const scene = new THREE.Scene();
 export const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
