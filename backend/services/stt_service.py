@@ -91,6 +91,17 @@ def _clean_asr_text(raw: str) -> str:
     if not raw:
         return ""
     text = re.sub(r"\(([^)]*)\)", " ", raw.strip())
+    
+    # Whisper yaygın halüsinasyonları temizle
+    hallucinations = [
+        "altyazı m.k.", "altyazı m.k", "altyazi m.k.", "altyazi m.k", "m.k.", "m.k", 
+        "izlediğiniz için teşekkürler", "subtitles by", "amara.org", "çeviri"
+    ]
+    t_lower = text.lower()
+    for h in hallucinations:
+        if h in t_lower:
+            text = re.compile(re.escape(h), re.IGNORECASE).sub("", text)
+            
     text = re.sub(r"\s+", " ", text).strip()
     text = _deduplicate(text)
 
