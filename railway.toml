@@ -1,8 +1,4 @@
 # Railway build ayarları
-[build]
-# Dockerfile kullan (Railpack yerine)
-dockerfilePath = "Dockerfile"
-
 [deploy]
 # Railway PORT ortam değişkenini otomatik kullanır
 healthcheckPath = "/"
