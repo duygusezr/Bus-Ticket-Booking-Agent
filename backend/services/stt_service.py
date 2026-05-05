@@ -267,7 +267,7 @@ async def _groq_transcribe(audio_bytes: bytes, filename: str, lang: str) -> str:
     headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}
     
     data = {
-        "model": "whisper-large-v3-turbo",
+        "model": "whisper-large-v3",
         "language": lang,
         "temperature": "0.0",
         "prompt": "Lütfen tam olarak duyduğunu yaz. Rakamları sayıyla yaz." if lang == "tr" else "Please transcribe strictly. Write numbers as digits."
