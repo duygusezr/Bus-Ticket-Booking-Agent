@@ -40,6 +40,7 @@ class Settings:
     DEFAULT_LANG: str = field(default_factory=lambda: os.getenv("DEFAULT_LANG", "tr"))
     PORT: int = field(default_factory=lambda: _parse_int(os.getenv("PORT"), 8001))
     GOOGLE_API_KEY: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
+    GROQ_API_KEY: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
 
     # Varsayılan değer .env.example'da belgelenmiş; burada sadece fallback.
     GEMINI_CHAT_MODEL: str = field(

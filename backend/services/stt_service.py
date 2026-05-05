@@ -4,8 +4,7 @@ number_utils is the single source of truth for number word → digit conversion.
 """
 import re
 from config import settings
-import google.genai as genai
-from google.genai import types
+import httpx
 
 from services.number_utils import (
     normalize_text,
@@ -248,37 +247,35 @@ _MIME_MAP: dict[str, str] = {
     ".ogg":  "audio/ogg",
 }
 
-_STT_INSTRUCTION_TR = (
-    "Sen bir ASR uzmanısın. TEK görevin ses dosyasını Türkçe yazıya dökmektir. "
-    "Türkçe olmayan kelimeler duyarsan yine de en yakın Türkçe karşılığıyla yaz. "
-    "KESİNLİKLE başka dil kullanma, Hintçe/Arapça/Rusça vs. karakter yazma. "
-    "Etiket veya yorum ekleme. Sadece duyduğun kelimeleri döndür. Ses yoksa boş string döndür."
-)
-_STT_INSTRUCTION_EN = (
-    "You are a professional ASR specialist. Your ONLY job is to transcribe spoken English audio. "
-    "ALWAYS output Latin/English characters only. NEVER output Hindi, Arabic, Chinese, Cyrillic, or any non-Latin script. "
-    "If you hear a name like 'Archie River', write 'Archie River' exactly. "
-    "If you hear digits like 'one two three', write '1 2 3'. "
-    "Do NOT translate or interpret. Return ONLY the spoken words verbatim in English. "
-    "If the audio is silent or unclear, return an empty string."
-)
+async def _groq_transcribe(audio_bytes: bytes, filename: str, lang: str) -> str:
+    """Groq API (whisper-large-v3-turbo) kullanarak sesi metne çevir."""
+    if not settings.GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY ayarlanmamış. STT işlemi yapılamaz.")
+        
+    url = "https://api.groq.com/openai/v1/audio/transcriptions"
+    headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}
+    
+    data = {
+        "model": "whisper-large-v3-turbo",
+        "language": lang,
+        "temperature": "0.0",
+        "prompt": "Lütfen tam olarak duyduğunu yaz. Rakamları sayıyla yaz." if lang == "tr" else "Please transcribe strictly. Write numbers as digits."
+    }
+    
+    files = {
+        "file": (filename, audio_bytes, "audio/webm")
+    }
 
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        res = await client.post(url, headers=headers, data=data, files=files)
+        
+    if res.status_code != 200:
+        raise RuntimeError(f"Groq API Hatası: {res.status_code} - {res.text}")
+        
+    resp_json = res.json()
+    transcript = resp_json.get("text", "").strip()
 
-async def _gemini_transcribe(audio_bytes: bytes, mime_type: str, lang: str) -> str:
-    client = genai.Client(api_key=settings.GOOGLE_API_KEY)
-    instruction = _STT_INSTRUCTION_TR if lang == "tr" else _STT_INSTRUCTION_EN
-    response = await client.aio.models.generate_content(
-        model=settings.GEMINI_CHAT_MODEL,
-        contents=[types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)],
-        config=types.GenerateContentConfig(system_instruction=instruction, temperature=0.0),
-    )
-    transcript = (response.text or "").strip()
-    # Residual label temizle
-    transcript = re.sub(r"^(Transcript|Transkripsiyon|Metin|Result|Sonuç):\s*", "", transcript, flags=re.IGNORECASE)
-    transcript = transcript.replace("`", "").strip()
-
-    # Güvenlik: Latin-dışı karakter oranı %30'dan fazlaysa boş döndür
-    # Hintce (ऀ-ॿ), Arapça (؀-ۿ), Kiril (Ѐ-ӿ), CJK (4E00-9FFF) vb.
+    # Whisper genellikle Latin-dışı karakter üretmez ancak güvenlik kontrolü:
     non_latin = re.findall(r'[\u0900-\u097F\u0600-\u06FF\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]', transcript)
     if transcript and len(non_latin) / max(len(transcript), 1) > 0.3:
         print(f"[STT] Non-Latin karakter tespit edildi, transkript reddedildi: {transcript!r}")
@@ -317,7 +314,7 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
     mime_type = _MIME_MAP.get(ext, "audio/webm")
 
     try:
-        raw = await _gemini_transcribe(audio_bytes, mime_type, lang)
+        raw = await _groq_transcribe(audio_bytes, filename, lang)
         cleaned = _clean_asr_text(raw)
         result = _postprocess(cleaned, lang, last_assistant)
         print(f"[STT] raw={raw!r} → cleaned={cleaned!r} → final={result!r}")
