@@ -759,7 +759,7 @@ updateVisemeLerp(dt) → morphTargetInfluences[i]
 | 13 | AA_VI_13_O | o, ö |
 | 14 | AA_VI_14_U | u, ü, w |
 
-**Ses Bitiş Senkronizasyonu:** `source.onended` tetiklendiğinde `resetVisemeImmediate()` tüm blendshape değerlerini o frame'de sıfırlar — lerp beklenmez, ağız anında kapanır.
+**Ses Bitiş Senkronizasyonu:** `source.onended` tetiklendiğinde `resetVisemeImmediate()` tüm blendshape değerlerini o frame'de sıfırlar — lerp beklenmez, ağız anında kapanır..
 
 ---
 
