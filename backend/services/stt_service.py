@@ -258,41 +258,45 @@ _MIME_MAP: dict[str, str] = {
     ".ogg":  "audio/ogg",
 }
 
-async def _groq_transcribe(audio_bytes: bytes, filename: str, lang: str) -> str:
-    """Groq API (whisper-large-v3-turbo) kullanarak sesi metne çevir."""
-    if not settings.GROQ_API_KEY:
-        raise RuntimeError("GROQ_API_KEY ayarlanmamış. STT işlemi yapılamaz.")
-        
-    url = "https://api.groq.com/openai/v1/audio/transcriptions"
-    headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}"}
-    
-    data = {
-        "model": "whisper-large-v3",
-        "language": lang,
-        "temperature": "0.0",
-        "prompt": "Lütfen tam olarak duyduğunu yaz. Rakamları sayıyla yaz." if lang == "tr" else "Please transcribe strictly. Write numbers as digits."
-    }
-    
-    files = {
-        "file": (filename, audio_bytes, "audio/webm")
-    }
+async def _elevenlabs_transcribe(audio_bytes: bytes, filename: str, lang: str) -> str:
+    """ElevenLabs Scribe v2 kullanarak sesi metne çevir."""
+    from elevenlabs.client import AsyncElevenLabs
+    import io
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        res = await client.post(url, headers=headers, data=data, files=files)
-        
-    if res.status_code != 200:
-        raise RuntimeError(f"Groq API Hatası: {res.status_code} - {res.text}")
-        
-    resp_json = res.json()
-    transcript = resp_json.get("text", "").strip()
+    if not settings.ELEVENLABS_API_KEY:
+        raise RuntimeError("ELEVENLABS_API_KEY ayarlanmamış. STT işlemi yapılamaz.")
 
-    # Whisper genellikle Latin-dışı karakter üretmez ancak güvenlik kontrolü:
-    non_latin = re.findall(r'[\u0900-\u097F\u0600-\u06FF\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]', transcript)
+    # language_code: "tr" veya "en" → ElevenLabs ISO-639-1 destekliyor
+    language_code = lang if lang in ("tr", "en") else None
+
+    client = AsyncElevenLabs(api_key=settings.ELEVENLABS_API_KEY)
+
+    # ElevenLabs SDK file parametresi: (filename, bytes, mime_type) tuple'ı kabul ediyor
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ".webm"
+    mime_type = _MIME_MAP.get(ext, "audio/webm")
+
+    audio_file = (filename, io.BytesIO(audio_bytes), mime_type)
+
+    result = await client.speech_to_text.convert(
+        file=audio_file,
+        model_id=settings.ELEVENLABS_STT_MODEL,
+        language_code=language_code,
+        tag_audio_events=False,
+    )
+
+    transcript = (result.text or "").strip()
+
+    # Non-Latin karakter filtresi (güvenlik)
+    non_latin = re.findall(
+        r'[\u0900-\u097F\u0600-\u06FF\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]',
+        transcript,
+    )
     if transcript and len(non_latin) / max(len(transcript), 1) > 0.3:
         print(f"[STT] Non-Latin karakter tespit edildi, transkript reddedildi: {transcript!r}")
         return ""
 
     return transcript
+
 
 
 def _postprocess(text: str, lang: str, last_assistant: str = "") -> str:
@@ -317,15 +321,12 @@ def _postprocess(text: str, lang: str, last_assistant: str = "") -> str:
 
 
 async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settings.DEFAULT_LANG, last_assistant: str = "") -> dict:
-    """Transcribe audio via Gemini and apply post-processing."""
+    """Transcribe audio via ElevenLabs Scribe and apply post-processing."""
     if not audio_bytes:
         raise ValueError("Gönderilen ses verisi boş.")
 
-    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ".webm"
-    mime_type = _MIME_MAP.get(ext, "audio/webm")
-
     try:
-        raw = await _groq_transcribe(audio_bytes, filename, lang)
+        raw = await _elevenlabs_transcribe(audio_bytes, filename, lang)
         cleaned = _clean_asr_text(raw)
         result = _postprocess(cleaned, lang, last_assistant)
         print(f"[STT] raw={raw!r} → cleaned={cleaned!r} → final={result!r}")
@@ -334,3 +335,4 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
         return {"text": result, "display_text": cleaned, "lang": lang}
     except Exception as e:
         raise RuntimeError(f"STT başarısız: {e}") from e
+

@@ -40,7 +40,10 @@ class Settings:
     DEFAULT_LANG: str = field(default_factory=lambda: os.getenv("DEFAULT_LANG", "tr"))
     PORT: int = field(default_factory=lambda: _parse_int(os.getenv("PORT"), 8001))
     OPENAI_API_KEY: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
-    GROQ_API_KEY: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
+    ELEVENLABS_API_KEY: str = field(default_factory=lambda: os.getenv("ELEVENLABS_API_KEY", ""))
+    ELEVENLABS_STT_MODEL: str = field(
+        default_factory=lambda: os.getenv("ELEVENLABS_STT_MODEL", "scribe_v2")
+    )
 
     # Varsayılan değer .env.example'da belgelenmiş; burada sadece fallback.
     OPENAI_CHAT_MODEL: str = field(
@@ -55,6 +58,11 @@ class Settings:
         if not self.OPENAI_API_KEY:
             warnings.warn(
                 "OPENAI_API_KEY ayarlanmamış. Tüm LLM çağrıları başarısız olacak.",
+                stacklevel=2,
+            )
+        if not self.ELEVENLABS_API_KEY:
+            warnings.warn(
+                "ELEVENLABS_API_KEY ayarlanmamış. STT (konuşma tanıma) çalışmayacak.",
                 stacklevel=2,
             )
         if self.CORS_ORIGINS == ["*"]:
