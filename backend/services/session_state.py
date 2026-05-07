@@ -104,28 +104,116 @@ def update_session_from_tool_result(
             clear_session(session_id)
 
 
-def build_truth_injection(session: BookingSession) -> str:
+def build_state_block(session: "BookingSession", lang: str = "tr") -> str:
     """
-    Oturumdaki doğrulanmış verileri LLM'e enjekte edilecek
-    [ABSOLUTE SYSTEM TRUTH: ...] bloğuna dönüştür.
-    Boş oturum için boş string döner.
-    """
-    parts: list[str] = []
-    if session.sefer_id is not None:
-        parts.append(f"STRICT_ID={session.sefer_id}")
-    if session.departure and session.destination:
-        parts.append(f"STRICT_ROUTE={session.departure} -> {session.destination}")
-    if session.travel_date:
-        parts.append(f"STRICT_DATE={session.travel_date}")
-    if session.seat:
-        parts.append(f"STRICT_SEAT={session.seat}")
-    if session.passenger_name:
-        parts.append(f"STRICT_NAME={session.passenger_name}")
-    if session.validated_phone:
-        parts.append(f"STRICT_PHONE={session.validated_phone}")
-    if session.validated_email:
-        parts.append(f"STRICT_EMAIL={session.validated_email}")
+    Oturumdaki doğrulanmış verileri LLM'e system prompt üzerinden iletilecek
+    yapılandırılmış blok olarak döndürür.
 
-    if not parts:
+    - Kullanıcı mesajına EKLENMEZ; her zaman system prompt içine girer.
+    - Sadece dolu alanlar gösterilir.
+    - Boş oturum için boş string döner.
+    - TC numarası kasıtlı olarak saklanmaz — her seferinde kullanıcıdan alınır.
+    """
+    if lang == "en":
+        return _build_state_block_en(session)
+    return _build_state_block_tr(session)
+
+
+def _build_state_block_tr(session: "BookingSession") -> str:
+    lines: list[str] = []
+
+    if session.sefer_id is not None:
+        lines.append(f"- Sefer ID     : {session.sefer_id}")
+    if session.departure and session.destination:
+        lines.append(f"- Güzergah     : {session.departure} → {session.destination}")
+    if session.travel_date:
+        lines.append(f"- Tarih        : {session.travel_date}")
+    if session.seat:
+        lines.append(f"- Koltuk       : {session.seat}")
+    if session.passenger_name:
+        lines.append(f"- Yolcu Adı    : {session.passenger_name}")
+    if session.validated_phone:
+        lines.append(f"- Telefon      : {session.validated_phone}")
+    if session.validated_email:
+        lines.append(f"- E-posta      : {session.validated_email}")
+    if session.tc_verified:
+        lines.append("- TC Doğrulama : ✓ Onaylandı (kullanıcıdan TC'yi tekrar al)")
+
+    if not lines:
         return ""
-    return f" [ABSOLUTE SYSTEM TRUTH (ASLA HALLUCINATE ETME): {' | '.join(parts)}]"
+
+    # Eksik alanları listele
+    missing: list[str] = []
+    if session.sefer_id is None:
+        missing.append("Sefer ID")
+    if not session.seat:
+        missing.append("Koltuk")
+    if not session.passenger_name:
+        missing.append("Ad Soyad")
+    if not session.tc_verified:
+        missing.append("TC Kimlik")
+    if not session.validated_phone:
+        missing.append("Telefon")
+    if not session.validated_email:
+        missing.append("E-posta")
+
+    block = "\n".join(lines)
+    if missing:
+        block += f"\n- Eksik Bilgiler: {', '.join(missing)}"
+    else:
+        block += "\n- Eksik Bilgiler: Yok — tüm bilgiler tam"
+
+    return (
+        "\n\n## REZERVASYON DURUMU (DOĞRULANMIŞ — ASLA HALLUCINATE ETME)\n"
+        f"{block}"
+    )
+
+
+def _build_state_block_en(session: "BookingSession") -> str:
+    lines: list[str] = []
+
+    if session.sefer_id is not None:
+        lines.append(f"- Trip ID      : {session.sefer_id}")
+    if session.departure and session.destination:
+        lines.append(f"- Route        : {session.departure} → {session.destination}")
+    if session.travel_date:
+        lines.append(f"- Date         : {session.travel_date}")
+    if session.seat:
+        lines.append(f"- Seat         : {session.seat}")
+    if session.passenger_name:
+        lines.append(f"- Passenger    : {session.passenger_name}")
+    if session.validated_phone:
+        lines.append(f"- Phone        : {session.validated_phone}")
+    if session.validated_email:
+        lines.append(f"- Email        : {session.validated_email}")
+    if session.tc_verified:
+        lines.append("- TC Verified  : ✓ Confirmed (ask user for TC again when booking)")
+
+    if not lines:
+        return ""
+
+    missing: list[str] = []
+    if session.sefer_id is None:
+        missing.append("Trip ID")
+    if not session.seat:
+        missing.append("Seat")
+    if not session.passenger_name:
+        missing.append("Full Name")
+    if not session.tc_verified:
+        missing.append("TC Identity")
+    if not session.validated_phone:
+        missing.append("Phone")
+    if not session.validated_email:
+        missing.append("Email")
+
+    block = "\n".join(lines)
+    if missing:
+        block += f"\n- Missing Info : {', '.join(missing)}"
+    else:
+        block += "\n- Missing Info : None — all fields complete"
+
+    return (
+        "\n\n## BOOKING STATE (VERIFIED — NEVER HALLUCINATE)\n"
+        f"{block}"
+    )
+

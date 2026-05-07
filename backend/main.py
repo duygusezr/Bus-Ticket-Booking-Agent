@@ -34,14 +34,14 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # ── Startup ──────────────────────────────────────────────
     from services.tools import init_db, get_all_seferler, get_all_rezervasyonlar
-    from services.llm_service import GEMINI_MODEL
+    from services.llm_service import OPENAI_MODEL
     from services.postgres_service import (
         init_postgres, close_postgres, seed_seferler_to_pg, seed_rezervasyonlar_to_pg,
     )
 
     # SQLite başlat
     init_db()
-    logger.info("Gemini model: %s", GEMINI_MODEL)
+    logger.info("OpenAI model: %s", OPENAI_MODEL)
     logger.info("CORS origins: %s", settings.CORS_ORIGINS)
 
     # PostgreSQL başlat (opsiyonel — DATABASE_URL yoksa devre dışı kalır)

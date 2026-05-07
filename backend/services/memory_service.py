@@ -1,14 +1,14 @@
 import asyncio
 import logging
 import time
-import google.genai as genai
+from openai import AsyncOpenAI
 from config import settings
 from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
 # Singleton istemci — llm_service ile aynı pattern, her özetlemede yeni nesne üretilmez.
-_GEMINI_CLIENT = genai.Client(api_key=settings.GOOGLE_API_KEY)
+_OPENAI_CLIENT = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 _sessions: Dict[str, dict] = {}
 _SUMMARIZE_EVERY = 5
@@ -59,12 +59,14 @@ async def _summarize(session: dict, session_id: str) -> None:
             "Never substitute placeholder examples for real data."
         )
 
-        response = await _GEMINI_CLIENT.aio.models.generate_content(
-            model=settings.GEMINI_CHAT_MODEL,
-            contents=prompt,
+        response = await _OPENAI_CLIENT.chat.completions.create(
+            model=settings.OPENAI_CHAT_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
         )
-        if response.text:
-            session["summary"] = response.text.strip()
+        result_text = response.choices[0].message.content or ""
+        if result_text:
+            session["summary"] = result_text.strip()
             logger.info(
                 "Hafıza güncellendi (%s) t=%.3fs uzunluk=%d",
                 session_id,

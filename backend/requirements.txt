@@ -11,7 +11,7 @@ python-multipart==0.0.20
 websockets==14.2
 httpx==0.28.1
 watchfiles==1.0.4
-google-genai==1.10.0
+openai==1.82.0
 
 # ── PostgreSQL dual-write desteği ──────────────────────────────────────────
 asyncpg==0.30.0

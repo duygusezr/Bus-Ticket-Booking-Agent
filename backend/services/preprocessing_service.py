@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
 from services.tools import validate_seat_selection, validate_phone_number, validate_email_address
-from services.session_state import get_session, build_truth_injection
+from services.session_state import get_session, update_session_from_tool_result
 from services.types import ToolResult
 
 logger = logging.getLogger(__name__)
@@ -220,44 +220,6 @@ def _try_email_validation(text: str, history: List[Dict[str, str]]) -> Optional[
 
 
 # ─────────────────────────────────────────────
-# Sistem enjeksiyonu
-# ─────────────────────────────────────────────
-
-def _build_validation_injection(
-    lang: str,
-    seat_result: Optional[ToolResult],
-    phone_result: Optional[ToolResult],
-    email_result: Optional[ToolResult],
-    session_id: str,
-) -> str:
-    """Deterministik doğrulama sonuçlarını LLM'e sistem mesajı olarak enjekte et."""
-    if email_result:
-        session = get_session(session_id)
-        sefer_id = session.sefer_id
-        if lang == "en":
-            base = (
-                f"[SYSTEM INFORMATION: Tool result: {email_result.message}. "
-                "Provide a clear SUMMARY and ask 'Do you confirm?'. Do NOT book yet!"
-            )
-            suffix = f" Use Trip ID={sefer_id} for Step 9.]" if sefer_id else "]"
-        else:
-            base = (
-                f"[SİSTEM BİLGİSİ: Araç sonucu: {email_result.message}. "
-                "Kullanıcıya tüm bilgilerin ÖZETİNİ sun ve 'Onaylıyor musunuz?' diye sor. Rezervasyon yapma!"
-            )
-            suffix = f" Onay sonrası sefer_id={sefer_id} kullanacaksın.]" if sefer_id else "]"
-        return f" {base}{suffix}"
-
-    for result in (phone_result, seat_result):
-        if result:
-            if lang == "en":
-                return f" [SYSTEM INFORMATION: Tool result: {result.message}]"
-            return f" [SİSTEM BİLGİSİ: Araç sonucu: {result.message}]"
-
-    return ""
-
-
-# ─────────────────────────────────────────────
 # Ana ön-işleme giriş noktası
 # ─────────────────────────────────────────────
 
@@ -270,26 +232,45 @@ def preprocess_request(
     """
     Router'ın LLM'e göndermeden önce çağırdığı tek fonksiyon.
 
-    1. Deterministik doğrulayıcıları çalıştırır (koltuk/telefon/e-posta).
-    2. Doğrulama sonuçlarını sistem enjeksiyonu olarak ekler.
-    3. Oturum durumundan ABSOLUTE SYSTEM TRUTH bloğunu ekler.
+    Structured State Memory mimarisi:
+    1. Doğal dil tarihi çözümler → mesaja [TARİH_ALGILANDI:] tag'ı ekler (tek mesaj enjeksiyonu).
+    2. Deterministik doğrulayıcıları çalıştırır (koltuk/telefon/e-posta).
+    3. Doğrulama sonuçlarını session'a yazar — kullanıcı mesajına HİÇBİR STRING EKLENMİYOR.
+    4. State, her LLM çağrısında llm_service tarafından system prompt içine alınır.
     """
+    # 1. Doğal dil tarihi çözümle (tek kalıcı mesaj enjeksiyonu)
+    text = _inject_date_if_needed(text, history, lang)
+
+    # 2. Deterministik doğrulama — sonuçlar session'a yaz, mesaja ekleme
     seat_result = _try_seat_validation(text, history)
     phone_result = _try_phone_validation(text, history)
     email_result = _try_email_validation(text, history)
 
-    # Doğal dil tarihi çözümleme — "yarın", "8 ağustos", "july 1st" → YYYY-MM-DD
-    text = _inject_date_if_needed(text, history, lang)
+    if seat_result and seat_result.success:
+        update_session_from_tool_result(
+            session_id=session_id,
+            tool_name="validate_seat_selection",
+            tool_args={},
+            tool_result=seat_result,
+        )
+        logger.info("[preprocess] Koltuk doğrulandı → session: %s", seat_result.data)
 
-    validation_injection = _build_validation_injection(
-        lang, seat_result, phone_result, email_result, session_id
-    )
-    processed = text + validation_injection
+    if phone_result and phone_result.success:
+        update_session_from_tool_result(
+            session_id=session_id,
+            tool_name="validate_phone_number",
+            tool_args={},
+            tool_result=phone_result,
+        )
+        logger.info("[preprocess] Telefon doğrulandı → session: %s", phone_result.data)
 
-    # Oturumdan doğrulanmış verileri enjekte et
-    session = get_session(session_id)
-    truth_injection = build_truth_injection(session)
-    if truth_injection and truth_injection not in processed:
-        processed += truth_injection
+    if email_result and email_result.success:
+        update_session_from_tool_result(
+            session_id=session_id,
+            tool_name="validate_email_address",
+            tool_args={},
+            tool_result=email_result,
+        )
+        logger.info("[preprocess] E-posta doğrulandı → session: %s", email_result.data)
 
-    return processed
+    return text

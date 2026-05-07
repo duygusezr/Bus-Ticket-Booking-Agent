@@ -37,8 +37,8 @@ services:
       - "8001:8001"
     environment:
       PORT: 8001
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
-      GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-2.5-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_CHAT_MODEL: ${OPENAI_CHAT_MODEL:-gpt-4.1-mini}
       DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/bus_ticket
       CORS_ORIGINS: "*"
     depends_on:

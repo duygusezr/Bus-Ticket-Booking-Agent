@@ -39,12 +39,12 @@ class Settings:
 
     DEFAULT_LANG: str = field(default_factory=lambda: os.getenv("DEFAULT_LANG", "tr"))
     PORT: int = field(default_factory=lambda: _parse_int(os.getenv("PORT"), 8001))
-    GOOGLE_API_KEY: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
+    OPENAI_API_KEY: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     GROQ_API_KEY: str = field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""))
 
     # Varsayılan değer .env.example'da belgelenmiş; burada sadece fallback.
-    GEMINI_CHAT_MODEL: str = field(
-        default_factory=lambda: os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
+    OPENAI_CHAT_MODEL: str = field(
+        default_factory=lambda: os.getenv("OPENAI_CHAT_MODEL", "gpt-4.1-mini")
     )
     CORS_ORIGINS: list[str] = field(
         default_factory=lambda: _parse_list(os.getenv("CORS_ORIGINS", "*"))
@@ -52,9 +52,9 @@ class Settings:
 
     def __post_init__(self) -> None:
         import warnings
-        if not self.GOOGLE_API_KEY:
+        if not self.OPENAI_API_KEY:
             warnings.warn(
-                "GOOGLE_API_KEY ayarlanmamış. Tüm LLM/STT çağrıları başarısız olacak.",
+                "OPENAI_API_KEY ayarlanmamış. Tüm LLM çağrıları başarısız olacak.",
                 stacklevel=2,
             )
         if self.CORS_ORIGINS == ["*"]:
