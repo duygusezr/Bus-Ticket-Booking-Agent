@@ -45,6 +45,12 @@ class Settings:
         default_factory=lambda: os.getenv("ELEVENLABS_STT_MODEL", "scribe_v2")
     )
 
+    # Gemini — STT fallback
+    GEMINI_API_KEY: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
+    GEMINI_STT_MODEL: str = field(
+        default_factory=lambda: os.getenv("GEMINI_STT_MODEL", "gemini-2.5-flash-preview-05-20")
+    )
+
     # Varsayılan değer .env.example'da belgelenmiş; burada sadece fallback.
     OPENAI_CHAT_MODEL: str = field(
         default_factory=lambda: os.getenv("OPENAI_CHAT_MODEL", "gpt-4.1-mini")
@@ -60,9 +66,20 @@ class Settings:
                 "OPENAI_API_KEY ayarlanmamış. Tüm LLM çağrıları başarısız olacak.",
                 stacklevel=2,
             )
-        if not self.ELEVENLABS_API_KEY:
+        if not self.ELEVENLABS_API_KEY and not self.GEMINI_API_KEY:
             warnings.warn(
-                "ELEVENLABS_API_KEY ayarlanmamış. STT (konuşma tanıma) çalışmayacak.",
+                "ELEVENLABS_API_KEY ve GEMINI_API_KEY ikisi de ayarlanmamış. "
+                "STT (konuşma tanıma) çalışmayacak.",
+                stacklevel=2,
+            )
+        elif not self.ELEVENLABS_API_KEY:
+            warnings.warn(
+                "ELEVENLABS_API_KEY ayarlanmamış. STT yalnızca Gemini fallback ile çalışacak.",
+                stacklevel=2,
+            )
+        elif not self.GEMINI_API_KEY:
+            warnings.warn(
+                "GEMINI_API_KEY ayarlanmamış. STT Gemini fallback'i kullanamayacak.",
                 stacklevel=2,
             )
         if self.CORS_ORIGINS == ["*"]:

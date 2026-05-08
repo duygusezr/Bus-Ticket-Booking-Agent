@@ -298,6 +298,73 @@ async def _elevenlabs_transcribe(audio_bytes: bytes, filename: str, lang: str) -
     return transcript
 
 
+async def _gemini_transcribe(audio_bytes: bytes, filename: str, lang: str) -> str:
+    """Gemini 2.5 Flash ile ses transkripsiyon (ElevenLabs fallback)."""
+    import base64
+    import httpx
+
+    if not settings.GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY ayarlanmamış. Gemini STT kullanılamaz.")
+
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ".webm"
+    mime_type = _MIME_MAP.get(ext, "audio/webm")
+
+    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+    lang_hint = "Türkçe" if lang == "tr" else "English"
+    prompt = (
+        f"Transcribe the following audio exactly as spoken in {lang_hint}. "
+        "Return only the transcription text, no explanations or formatting."
+    )
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": audio_b64,
+                        }
+                    },
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": 512,
+        },
+    }
+
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{settings.GEMINI_STT_MODEL}:generateContent"
+        f"?key={settings.GEMINI_API_KEY}"
+    )
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(url, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+
+    candidates = data.get("candidates", [])
+    if not candidates:
+        raise RuntimeError(f"Gemini STT boş yanıt döndürdü: {data}")
+
+    parts = candidates[0].get("content", {}).get("parts", [])
+    transcript = " ".join(p.get("text", "") for p in parts).strip()
+
+    # Non-Latin karakter filtresi (güvenlik)
+    non_latin = re.findall(
+        r'[\u0900-\u097F\u0600-\u06FF\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]',
+        transcript,
+    )
+    if transcript and len(non_latin) / max(len(transcript), 1) > 0.3:
+        print(f"[STT-Gemini] Non-Latin karakter tespit edildi, transkript reddedildi: {transcript!r}")
+        return ""
+
+    return transcript
 
 def _postprocess(text: str, lang: str, last_assistant: str = "") -> str:
     """Apply context-aware normalization to raw transcript."""
@@ -321,18 +388,38 @@ def _postprocess(text: str, lang: str, last_assistant: str = "") -> str:
 
 
 async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settings.DEFAULT_LANG, last_assistant: str = "") -> dict:
-    """Transcribe audio via ElevenLabs Scribe and apply post-processing."""
+    """Transcribe audio via ElevenLabs Scribe (primary) → Gemini 2.5 Flash (fallback)."""
     if not audio_bytes:
         raise ValueError("Gönderilen ses verisi boş.")
 
-    try:
-        raw = await _elevenlabs_transcribe(audio_bytes, filename, lang)
-        cleaned = _clean_asr_text(raw)
-        result = _postprocess(cleaned, lang, last_assistant)
-        print(f"[STT] raw={raw!r} → cleaned={cleaned!r} → final={result!r}")
-        # display_text: kullanıcıya gösterilecek metin (ham transkript)
-        # text: backend'e gönderilecek normalize metin
-        return {"text": result, "display_text": cleaned, "lang": lang}
-    except Exception as e:
-        raise RuntimeError(f"STT başarısız: {e}") from e
+    last_error: Exception | None = None
+
+    # ── Primary: ElevenLabs Scribe ──────────────────────────────────────────
+    if settings.ELEVENLABS_API_KEY:
+        try:
+            raw = await _elevenlabs_transcribe(audio_bytes, filename, lang)
+            cleaned = _clean_asr_text(raw)
+            result = _postprocess(cleaned, lang, last_assistant)
+            print(f"[STT/ElevenLabs] raw={raw!r} → cleaned={cleaned!r} → final={result!r}")
+            return {"text": result, "display_text": cleaned, "lang": lang, "provider": "elevenlabs"}
+        except Exception as e:
+            last_error = e
+            print(f"[STT] ElevenLabs başarısız ({e!r}), Gemini fallback deneniyor…")
+    else:
+        print("[STT] ELEVENLABS_API_KEY yok, doğrudan Gemini fallback kullanılıyor.")
+
+    # ── Fallback: Gemini 2.5 Flash ───────────────────────────────────────────
+    if settings.GEMINI_API_KEY:
+        try:
+            raw = await _gemini_transcribe(audio_bytes, filename, lang)
+            cleaned = _clean_asr_text(raw)
+            result = _postprocess(cleaned, lang, last_assistant)
+            print(f"[STT/Gemini] raw={raw!r} → cleaned={cleaned!r} → final={result!r}")
+            return {"text": result, "display_text": cleaned, "lang": lang, "provider": "gemini"}
+        except Exception as e:
+            last_error = e
+            print(f"[STT] Gemini fallback da başarısız: {e!r}")
+
+    # ── Her iki provider da başarısız ────────────────────────────────────────
+    raise RuntimeError(f"STT başarısız (tüm provider'lar denendi): {last_error}") from last_error
 

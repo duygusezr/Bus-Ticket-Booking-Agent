@@ -44,18 +44,27 @@ scene.add(dirLight);
 scene.add(new THREE.AmbientLight(0xffffff, 1.0));
 
 // ─── VRM URL Config ──────────────────────────────────────────
-// Karakter VRM dosyaları Cloudflare R2'de barındırılır.
-//   • Public bucket: pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev
-//   • CORS: Allowed origins → Cloudflare Pages domain'i + localhost (test için)
-//   • Bandwidth limiti yok — egress free (S3'ün aksine)
+// Local'de (localhost / 127.0.0.1) CORS engeli nedeniyle R2'ye erişilemez.
+// Bu nedenle ortama göre URL otomatik seçilir:
+//   • local  → frontend/models/ klasöründeki dosyalar
+//   • prod   → Cloudflare R2 public bucket
 //
-// Yeni bir karakter eklemek için:
-//   1. VRM dosyasını R2 bucket'a yükle (Cloudflare Dashboard → R2 → Upload)
-//   2. Aşağıdaki tabloya bir satır ekle
-//   3. main.js'te ilgili butonu bağla — başka değişiklik gerekmez
+// Local'de çalıştırmak için:
+//   frontend/models/avatar.vrm               (female)
+//   frontend/models/Male_Adult_11_facial.vrm (male)
+// dosyalarının mevcut olduğundan emin olun.
+
+const _isLocal = ['localhost', '127.0.0.1', ''].includes(location.hostname);
+const _R2      = 'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev';
+const _LOCAL   = './models';
+const _BASE    = _isLocal ? _LOCAL : _R2;
+
 export const AVATAR_URLS = {
-    female: 'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/avatar.vrm',
-    male:   'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/Male_Adult_11_facial.vrm',
+    female: `${_BASE}/avatar.vrm`,
+    // Local'de Male_Adult_11_facial.vrm yoksa avatar_anime_backup.vrm kullan
+    male:   _isLocal
+        ? `${_LOCAL}/avatar_anime_backup.vrm`
+        : `${_R2}/Male_Adult_11_facial.vrm`,
 };
 export const DEFAULT_AVATAR = AVATAR_URLS.female;
 

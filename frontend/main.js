@@ -7,7 +7,7 @@
  * Mikrofon artık "basılı tut" değil, VAD (Voice Activity Detection)
  * toggle sistemiyle çalışır: bir kez tıkla → sürekli dinle.
  */
-import { loadVRM } from './js/avatar.js';   // Sahneyi başlatır ve animasyon döngüsünü çalıştırır
+import { loadVRM, AVATAR_URLS } from './js/avatar.js';   // Sahneyi başlatır ve animasyon döngüsünü çalıştırır
 
 // ─── Varsayılan ses garantisi ───────────────────────────────────────
 // Özel bir avatar yüklenmemişse (avatarFileName yoksa) ses her zaman
@@ -100,8 +100,8 @@ closeSidebarBtn?.addEventListener('click',  () => historySidebar?.classList.remo
 // ─── Cinsiyet / Avatar Seçimi ─────────────────────────────
 
 const AVATARS = {
-    female: { model: 'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/avatar.vrm',               voice: 'default', rotation: 0 },
-    male:   { model: 'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/Male_Adult_11_facial.vrm', voice: 'male',    rotation: 0 },
+    female: { model: AVATAR_URLS.female, voice: 'default', rotation: 0 },
+    male:   { model: AVATAR_URLS.male,   voice: 'male',    rotation: 0 },
 };
 
 const genderFemaleBtn = document.getElementById('gender-female');
@@ -253,7 +253,7 @@ avatarResetBtn?.addEventListener('click', async () => {
     if (avatarProgressFill) avatarProgressFill.style.width = '0%';
     if (avatarProgressText) avatarProgressText.textContent = 'Yükleniyor...';
     try {
-        await loadVRM('https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev/avatar.vrm', p => {
+        await loadVRM(AVATAR_URLS.female, p => {
             const pct = p.total > 0 ? Math.round((p.loaded / p.total) * 100) : 0;
             if (avatarProgressFill) avatarProgressFill.style.width = pct + '%';
         });
