@@ -48,7 +48,7 @@ class Settings:
     # Gemini — STT fallback
     GEMINI_API_KEY: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     GEMINI_STT_MODEL: str = field(
-        default_factory=lambda: os.getenv("GEMINI_STT_MODEL", "gemini-2.5-flash-preview-05-20")
+        default_factory=lambda: os.getenv("GEMINI_STT_MODEL", "gemini-2.5-flash")
     )
 
     # Varsayılan değer .env.example'da belgelenmiş; burada sadece fallback.
