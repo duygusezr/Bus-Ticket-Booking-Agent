@@ -41,7 +41,8 @@ async def chat_endpoint(request: ChatRequest):
         response_text = await generate_chat_response(processed_text, request.history, lang, session_id)
         t_llm = time.perf_counter()
 
-        audio_base64, words = await generate_tts(response_text, lang, request.voice)
+        voice = request.voice or "default"
+        audio_base64, words = await generate_tts(response_text, lang, voice)
         t_tts = time.perf_counter()
 
         logger.info(
