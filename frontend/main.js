@@ -30,11 +30,17 @@ import {
     addToHistoryPanel,
     initWebSocket,
     resetChat,
+    speakWelcomeMessage,
 } from './js/chat.js';
 
 // ─── WebSocket bağlantısını başlat ───────────────────────────
 
 initWebSocket();
+
+// İlk yüklemede avatar hazır olunca konuş
+window.addEventListener('vrm-loaded', () => {
+    speakWelcomeMessage();
+});
 
 // ─── UI elementleri ───────────────────────────────────────────
 
@@ -114,7 +120,10 @@ async function _switchAvatar(gender) {
     genderMaleBtn?.classList.toggle('active',   gender === 'male');
     localStorage.setItem('avatarVoice', cfg.voice);
     resetChat();
-    try { await loadVRM(cfg.model, null, cfg.rotation); }
+    try { 
+        await loadVRM(cfg.model, null, cfg.rotation); 
+        speakWelcomeMessage();
+    }
     catch (e) { console.error('Avatar yüklenemedi:', e); }
 }
 
@@ -182,6 +191,7 @@ async function _handleVRMFile(file) {
         if (avatarProgressText) avatarProgressText.textContent = 'Tamamlandı!';
         _setAvatarStatus('✅ Avatar başarıyla yüklendi: ' + file.name, 'success');
         _updateAvatarNameDisplay();
+        speakWelcomeMessage();
 
         setTimeout(() => {
             if (avatarProgressWrap) avatarProgressWrap.hidden = true;
@@ -261,6 +271,7 @@ avatarResetBtn?.addEventListener('click', async () => {
         if (avatarProgressText) avatarProgressText.textContent = 'Tamamlandı!';
         _setAvatarStatus('✅ Varsayılan avatar geri yüklendi.', 'success');
         _updateAvatarNameDisplay();
+        speakWelcomeMessage();
         setTimeout(() => { if (avatarProgressWrap) avatarProgressWrap.hidden = true; }, 2000);
     } catch {
         _setAvatarStatus('❌ Varsayılan avatar yüklenemedi.', 'error');

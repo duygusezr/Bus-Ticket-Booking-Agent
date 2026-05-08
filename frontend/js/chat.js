@@ -82,6 +82,29 @@ export function resetChat() {
     }
 }
 
+/**
+ * Hoş geldin mesajını sesli olarak okur.
+ */
+export async function speakWelcomeMessage() {
+    const welcomeText = translations[_currentLang].welcome;
+    try {
+        const response = await fetch(`${API_BASE}/api/tts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: welcomeText, lang: _currentLang })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            if (data.audio) {
+                await initWebAudio();
+                await playBase64Audio(data.audio, data.visemes || [], welcomeText);
+            }
+        }
+    } catch (err) {
+        console.error('[TTS] Hoş geldin mesajı okunamadı:', err);
+    }
+}
+
 export function setLanguage(lang) {
     _currentLang = lang;
     if (chatInput) chatInput.placeholder = translations[lang].placeholder;

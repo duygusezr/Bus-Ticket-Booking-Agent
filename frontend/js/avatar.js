@@ -256,6 +256,8 @@ scene.add(_lookAtTarget);
 
 loadVRM(DEFAULT_AVATAR, p => {
     console.log('Yükleniyor...', (100 * p.loaded / p.total).toFixed(2), '%');
+}).then(() => {
+    window.dispatchEvent(new CustomEvent('vrm-loaded'));
 }).catch(err => {
     console.error('VRM yükleme başarısız:', err);
     const sub = document.getElementById('subtitle');
