@@ -323,8 +323,8 @@ async def _gemini_transcribe(audio_bytes: bytes, filename: str, lang: str) -> st
                 "parts": [
                     {"text": prompt},
                     {
-                        "inline_data": {
-                            "mime_type": mime_type,
+                        "inlineData": {
+                            "mimeType": mime_type,
                             "data": audio_b64,
                         }
                     },
