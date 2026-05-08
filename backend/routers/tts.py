@@ -10,6 +10,7 @@ router = APIRouter()
 class TTSRequest(BaseModel):
     text: str
     lang: Optional[str] = settings.DEFAULT_LANG
+    voice: Optional[str] = "default"
 
 
 @router.post("/api/tts")
@@ -19,7 +20,7 @@ async def tts_endpoint(request: TTSRequest):
     """
     try:
         lang = request.lang or settings.DEFAULT_LANG
-        audio_base64, visemes = await generate_tts(request.text, lang)
+        audio_base64, visemes = await generate_tts(request.text, lang, request.voice)
         return {"audio": audio_base64, "visemes": visemes}
     except Exception as e:
         raise HTTPException(

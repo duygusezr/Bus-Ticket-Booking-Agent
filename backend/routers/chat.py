@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     lang: Optional[str] = settings.DEFAULT_LANG
     history: List[Dict[str, str]] = []
     session_id: str = "default"
+    voice: Optional[str] = "default"
 
 
 # ─────────────────────────────────────────────
@@ -40,7 +41,7 @@ async def chat_endpoint(request: ChatRequest):
         response_text = await generate_chat_response(processed_text, request.history, lang, session_id)
         t_llm = time.perf_counter()
 
-        audio_base64, words = await generate_tts(response_text, lang)
+        audio_base64, words = await generate_tts(response_text, lang, request.voice)
         t_tts = time.perf_counter()
 
         logger.info(
