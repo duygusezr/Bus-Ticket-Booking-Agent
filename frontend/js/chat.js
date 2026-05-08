@@ -29,6 +29,8 @@ const subtitle    = document.getElementById('subtitle');
 const chatInput   = document.getElementById('chat-input');
 const historyList = document.getElementById('history-list');
 
+let welcomeMessagePlayed = false;
+
 // ─── Dil ─────────────────────────────────────────────────────
 
 let _currentLang = 'tr';
@@ -86,6 +88,8 @@ export function resetChat() {
  * Hoş geldin mesajını sesli olarak okur.
  */
 export async function speakWelcomeMessage() {
+    if (welcomeMessagePlayed) return;
+    
     const welcomeText = translations[_currentLang].welcome;
     try {
         const response = await fetch(`${API_BASE}/api/tts`, {
@@ -96,8 +100,13 @@ export async function speakWelcomeMessage() {
         if (response.ok) {
             const data = await response.json();
             if (data.audio) {
-                await initWebAudio();
-                await playBase64Audio(data.audio, data.visemes || [], welcomeText);
+                const ctx = await initWebAudio();
+                if (ctx && ctx.state === 'running') {
+                    welcomeMessagePlayed = true;
+                    await playBase64Audio(data.audio, data.visemes || [], welcomeText);
+                } else {
+                    console.warn('[TTS] AudioContext not running, welcome message deferred.');
+                }
             }
         }
     } catch (err) {

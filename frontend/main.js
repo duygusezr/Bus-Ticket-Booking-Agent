@@ -37,10 +37,23 @@ import {
 
 initWebSocket();
 
-// İlk yüklemede avatar hazır olunca konuş
+// İlk yüklemede avatar hazır olunca konuşmayı dene
 window.addEventListener('vrm-loaded', () => {
     speakWelcomeMessage();
 });
+
+// Tarayıcı autoplay kısıtlamalarını aşmak için ilk etkileşimde (tıklama, dokunma) ses tetikleyici
+const _initOnFirstInteraction = async () => {
+    await initWebAudio();
+    speakWelcomeMessage();
+    // Dinleyiciyi kaldır (sadece bir kez çalışmalı)
+    ['click', 'touchstart', 'keydown'].forEach(evt => 
+        window.removeEventListener(evt, _initOnFirstInteraction)
+    );
+};
+['click', 'touchstart', 'keydown'].forEach(evt => 
+    window.addEventListener(evt, _initOnFirstInteraction, { once: false })
+);
 
 // ─── UI elementleri ───────────────────────────────────────────
 

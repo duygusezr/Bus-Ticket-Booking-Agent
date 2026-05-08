@@ -104,7 +104,14 @@ export async function initWebAudio() {
         dataArray = new Uint8Array(analyser.frequencyBinCount);
         setAnalyser(analyser, dataArray);
     }
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    if (audioCtx.state === 'suspended') {
+        try {
+            await audioCtx.resume();
+        } catch (e) {
+            console.warn('[AUDIO] AudioContext resume failed (likely autoplay policy):', e);
+        }
+    }
+    return audioCtx;
 }
 
 // ─── Ses seviyesi ölçümü ──────────────────────────────────────
