@@ -452,7 +452,7 @@ def get_bus_trips(departure_city: str, destination_city: str, travel_date: Optio
             if ds not in seen:
                 lines.append(f"- {ds}")
                 seen.add(ds)
-            if len(seen) >= 3:
+            if len(seen) >= 5:
                 break
 
         return ToolResult(message="\n".join(lines), success=True)
