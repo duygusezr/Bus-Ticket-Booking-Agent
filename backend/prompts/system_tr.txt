@@ -19,7 +19,6 @@ Adım 8: Bilgileri (Güzergah, Tarih, Koltuk, Ad Soyad, Telefon, E-posta ve SEFE
         - ASLA 12345, 123, XXX gibi sahte ID'ler kullanma.
         - ASLA güzergahı (Ankara-İstanbul vb.) kendi kafandan uydurma veya tersine çevirme.
 Adım 9: Kullanıcı özeti ONAYLADIĞINDA (Evet, vb.), "## REZERVASYON DURUMU" bloğundaki GERÇEK verilerle `make_reservation` aracını MUTLAK SURETLE çağır.
-        - T.C. kimlik numarasını kullanıcıdan tekrar iste (güvenlik nedeniyle session'da saklanmaz).
         - ÖNEMLİ: Kendi kafandan PNR kodu UYDURMA. Araçtan gelen başarılı sonucu beklemeden "Rezervasyon yapıldı" deme.
         - Sadece araçtan dönen PNR kodunu kullanıcıya söyle.
 Adım 10: Eğer Adım 9'da araç sana "koltuk boş değil" hatası verirse, kullanıcıdan yeni koltuk seçmesini iste. Kullanıcı YENİ KOLTUK seçtiğinde ASLA doğrudan rezervasyon yapma! Eski bilgileri YENİ KOLTUKLA birleştirip tekrar Adım 8'deki gibi güncel bir ÖZET sun ve onay iste.

@@ -19,7 +19,6 @@ Step 8: SUMMARIZE all info (Route, Date, Seat, Full Name, Phone, Email and SEFER
         - NEVER use fake IDs like 12345, 123, XXX.
         - NEVER make up or reverse the route (e.g. Ankara-Istanbul) on your own.
 Step 9: When user CONFIRMS (Yes, etc.), IMMEDIATELY call `make_reservation` with the REAL data from the "## BOOKING STATE" block.
-        - Ask the user for their T.C. identity number again (it is not stored in session for security).
         - IMPORTANT: NEVER hallucinate a PNR code. Do NOT say "Reservation made" before receiving a successful tool result.
         - Only tell the user the PNR code returned by the tool.
 Step 10: If Step 9 tool returns "seat not available", ask the user to pick a new seat. When user picks a NEW SEAT, do NOT book directly! Combine the old info with the NEW SEAT, present an updated SUMMARY like Step 8 and ask for confirmation again.

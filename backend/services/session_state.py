@@ -30,6 +30,7 @@ class BookingSession:
     validated_phone: Optional[str] = None
     validated_email: Optional[str] = None
     tc_verified: bool = False
+    tc_no: Optional[str] = None
     # Koltuk haritası popup için
     available_seats: Optional[str] = None
     occupied_seats: Optional[str] = None
@@ -87,6 +88,8 @@ def update_session_from_tool_result(
 
     elif tool_name == "validate_tc_number":
         session.tc_verified = True
+        if "tc_no" in tool_args:
+            session.tc_no = str(tool_args["tc_no"])
 
     elif tool_name == "validate_phone_number":
         if "formatted" in d:
@@ -136,8 +139,10 @@ def _build_state_block_tr(session: "BookingSession") -> str:
         lines.append(f"- Telefon      : {session.validated_phone}")
     if session.validated_email:
         lines.append(f"- E-posta      : {session.validated_email}")
-    if session.tc_verified:
-        lines.append("- TC Doğrulama : ✓ Onaylandı (kullanıcıdan TC'yi tekrar al)")
+    if session.tc_verified and session.tc_no:
+        lines.append(f"- TC No        : {session.tc_no}")
+    elif session.tc_verified:
+        lines.append("- TC Doğrulama : ✓ Onaylandı")
 
     if not lines:
         return ""
@@ -186,8 +191,10 @@ def _build_state_block_en(session: "BookingSession") -> str:
         lines.append(f"- Phone        : {session.validated_phone}")
     if session.validated_email:
         lines.append(f"- Email        : {session.validated_email}")
-    if session.tc_verified:
-        lines.append("- TC Verified  : ✓ Confirmed (ask user for TC again when booking)")
+    if session.tc_verified and session.tc_no:
+        lines.append(f"- TC No        : {session.tc_no}")
+    elif session.tc_verified:
+        lines.append("- TC Verified  : ✓ Confirmed")
 
     if not lines:
         return ""
