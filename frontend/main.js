@@ -70,8 +70,8 @@ const subtitle        = document.getElementById('subtitle');
 
 // ─── Dil butonları ────────────────────────────────────────────
 
-langTrBtn?.addEventListener('click', () => { setLanguage('tr'); resetChat(); });
-langEnBtn?.addEventListener('click', () => { setLanguage('en'); resetChat(); });
+langTrBtn?.addEventListener('click', () => { setLanguage('tr'); resetChat(); speakWelcomeMessage(); });
+langEnBtn?.addEventListener('click', () => { setLanguage('en'); resetChat(); speakWelcomeMessage(); });
 
 // ─── Mesaj gönderme ───────────────────────────────────────────
 

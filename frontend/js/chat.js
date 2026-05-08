@@ -21,7 +21,7 @@ console.log(`[CONFIG] API: ${API_BASE} | WS: ${WS_BASE}`);
 
 // ─── Oturum ───────────────────────────────────────────────────
 
-export const SESSION_ID = crypto.randomUUID();
+export let SESSION_ID = crypto.randomUUID();
 
 // ─── UI referansları ──────────────────────────────────────────
 
@@ -57,9 +57,11 @@ const translations = {
  */
 export function resetChat() {
     stopAudio();
+    welcomeMessagePlayed = false;
     isSending = false;
     currentFullResponse = '';
     chatHistory.length = 0;
+    SESSION_ID = crypto.randomUUID();
     if (subtitle) subtitle.textContent = '';
 
     // Geçmiş listesini temizle, sadece hoş geldin mesajını bırak
