@@ -97,7 +97,11 @@ export async function speakWelcomeMessage() {
         const response = await fetch(`${API_BASE}/api/tts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: welcomeText, lang: _currentLang })
+            body: JSON.stringify({ 
+                text: welcomeText, 
+                lang: _currentLang,
+                voice: localStorage.getItem('avatarVoice') || 'default'
+            })
         });
         if (response.ok) {
             const data = await response.json();
