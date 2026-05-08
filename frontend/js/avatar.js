@@ -55,7 +55,8 @@ scene.add(new THREE.AmbientLight(0xffffff, 1.0));
 // dosyalarının mevcut olduğundan emin olun.
 
 const _isLocal = ['localhost', '127.0.0.1', ''].includes(location.hostname);
-const _R2      = 'https://pub-1dbdf22ad0894ae8ab30f25240bada34.r2.dev';
+// R2 engellendiği için backend'den servis ediyoruz
+const _R2      = 'https://bus-ticket-booking-agent-production.up.railway.app/models';
 const _LOCAL   = './models';
 const _BASE    = _isLocal ? _LOCAL : _R2;
 

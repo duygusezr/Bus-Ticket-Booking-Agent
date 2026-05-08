@@ -15,6 +15,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from config import settings
@@ -79,6 +80,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Serve models from backend to bypass Cloudflare R2 blocking
+models_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "models")
+if os.path.exists(models_path):
+    app.mount("/models", StaticFiles(directory=models_path), name="models")
 
 app.include_router(chat_router)
 app.include_router(stt_router)
