@@ -34,7 +34,8 @@ COPY --from=backend-deps /usr/local/bin /usr/local/bin
 # Backend kodu (database klasörü dahil)
 COPY backend/ ./backend/
 
-# Frontend static dosyaları
+# Frontend ve modelleri kopyala
+COPY models/ ./models/
 COPY frontend/ ./frontend/
 
 # Çalışma dizini backend

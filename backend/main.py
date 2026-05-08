@@ -82,7 +82,7 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Serve models from backend to bypass Cloudflare R2 blocking
-models_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "models")
+models_path = os.path.join(os.path.dirname(__file__), "..", "models")
 if os.path.exists(models_path):
     app.mount("/models", StaticFiles(directory=models_path), name="models")
 
