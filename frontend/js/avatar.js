@@ -61,11 +61,8 @@ const _LOCAL   = './models';
 const _BASE    = _isLocal ? _LOCAL : _R2;
 
 export const AVATAR_URLS = {
-    female: `${_BASE}/avatar.vrm`,
-    // Local'de Male_Adult_11_facial.vrm yoksa avatar_anime_backup.vrm kullan
-    male:   _isLocal
-        ? `${_LOCAL}/avatar_anime_backup.vrm`
-        : `${_R2}/Male_Adult_11_facial.vrm`,
+    female: `${_BASE}/Female_Adult_01_facial.vrm`,
+    male:   `${_BASE}/Male_Adult_11_facial.vrm`,
 };
 export const DEFAULT_AVATAR = AVATAR_URLS.female;
 
