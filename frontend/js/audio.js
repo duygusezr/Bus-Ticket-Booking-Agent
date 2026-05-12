@@ -56,6 +56,8 @@ let silenceTimer         = null;
 let speechStartTime      = null;
 let aboveThresholdFrames = 0;
 let vadCooldownUntil     = 0;
+// Barge-in onayı beklenirken avatar durdurulmaz; STT başarılı olursa durdurulur
+let _bargePending        = false;
 
 // Geri çağırmalar
 let _onTranscript = null;
@@ -220,7 +222,12 @@ function stopVadRecording() {
     if (_micBtn) _micBtn.classList.remove('recording');
 
     mediaRecorder.onstop = async () => {
+        const wasBargePending = _bargePending;
+        _bargePending = false;
+
         if (elapsed < MIN_SPEECH_MS) {
+            // Ses çok kısa (öksürük, hapşırık vb.) — barge-in bekleniyorsa avatar zaten
+            // durdurulmamıştı; normal modda da gürültü sayılarak atlanır.
             if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
             return;
         }
@@ -231,6 +238,9 @@ function stopVadRecording() {
             if (_subtitle) _subtitle.textContent = getSubtitleText('listening');
             return;
         }
+
+        // Geçerli bir ses alındı; barge-in bekleniyorsa avatarı şimdi durdur.
+        if (wasBargePending) stopAvatar();
 
         if (_subtitle) _subtitle.textContent = getSubtitleText('processing');
 
@@ -291,10 +301,12 @@ function vadLoop() {
             aboveThresholdFrames++;
             if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
 
-            if (aboveThresholdFrames >= BARGE_IN_CONFIRM_FRAMES) {
-                // Barge-in: AI'yı durdur, kullanıcıyı kaydet
-                stopAvatar();
-                vadCooldownUntil = 0; // barge-in sonrası cooldown yok
+            if (aboveThresholdFrames >= BARGE_IN_CONFIRM_FRAMES && !_bargePending) {
+                // Barge-in tespiti: önce kaydı başlat, avatar konuşmayı sürdürsün.
+                // stopAvatar() yalnızca geçerli bir transkript gelirse çağrılır —
+                // böylece öksürük/hapşırık gibi kısa sesler avatarı susturmaz.
+                _bargePending = true;
+                vadCooldownUntil = 0;
                 if (!isRecording) startVadRecording();
             }
         } else {

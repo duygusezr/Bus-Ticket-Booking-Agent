@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__desktop-manager__directory_tree"
+    ]
+  }
+}
