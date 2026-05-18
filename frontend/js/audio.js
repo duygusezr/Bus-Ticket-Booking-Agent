@@ -585,6 +585,113 @@ export async function toggleVAD(micBtn, onTranscript, apiBase, getLang, subtitle
     }
 }
 
-// ─── Geriye dönük uyumluluk ──────────────────────────────────
+// ─── Geriye dönük uyumluluk ──────────────────────────────────────
 export function startRecording() {}
 export function stopRecording() {}
+
+// ─── Push-to-Talk (PTT) ───────────────────────────────────────────
+// Butona basılı tutulduğunda kayıt başlar, bırakınca durur ve STT'ye gönderir.
+
+let _pttActive = false;
+let _pttStream = null;
+let _pttRecorder = null;
+let _pttChunks = [];
+let _pttStartTime = 0;
+
+export async function initPTT(onTranscript, apiBase, getLang, subtitle, micBtn) {
+    _onTranscript = onTranscript;
+    _apiBase      = apiBase;
+    _getLang      = getLang;
+    _subtitle     = subtitle;
+    _micBtn       = micBtn;
+    await initWebAudio();
+}
+
+export async function startPTT() {
+    if (_pttActive) return;
+    // Avatar konuşuyorsa durdur (barge-in)
+    if (avatarIsSpeaking) stopAvatar();
+
+    try {
+        _pttStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, sampleRate: 16000, channelCount: 1 }
+        });
+    } catch {
+        if (_subtitle) _subtitle.textContent = 'Mikrofon izni gerekli.';
+        return;
+    }
+
+    _pttChunks = [];
+    _pttStartTime = Date.now();
+    _pttActive = true;
+
+    try {
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
+        _pttRecorder = new MediaRecorder(_pttStream, { mimeType });
+    } catch {
+        _pttRecorder = new MediaRecorder(_pttStream);
+    }
+
+    _pttRecorder.ondataavailable = e => { if (e.data.size > 0) _pttChunks.push(e.data); };
+    _pttRecorder.start(80);
+
+    if (_micBtn) _micBtn.classList.add('ptt-active', 'recording');
+    if (_subtitle) _subtitle.textContent = _getLang?.() === 'en' ? 'Recording...' : 'Dinliyorum...';
+    setListening(true);
+}
+
+export async function stopPTT() {
+    if (!_pttActive || !_pttRecorder) return;
+    _pttActive = false;
+
+    const elapsed = Date.now() - _pttStartTime;
+    if (_micBtn) _micBtn.classList.remove('ptt-active', 'recording');
+    setListening(false);
+
+    _pttRecorder.onstop = async () => {
+        if (_pttStream) { _pttStream.getTracks().forEach(t => t.stop()); _pttStream = null; }
+
+        if (elapsed < 200) {
+            if (_subtitle) _subtitle.textContent = '';
+            return;
+        }
+
+        const mimeType = _pttRecorder.mimeType || 'audio/webm';
+        const blob = new Blob(_pttChunks, { type: mimeType });
+        if (blob.size < 200) { if (_subtitle) _subtitle.textContent = ''; return; }
+
+        if (_subtitle) _subtitle.textContent = _getLang?.() === 'en' ? 'Processing...' : 'Anlıyorum...';
+
+        const formData = new FormData();
+        formData.append('file', blob, 'recording.webm');
+        formData.append('lang', _getLang());
+        const historyList = document.getElementById('history-list');
+        const aiItems = historyList?.querySelectorAll('.history-item.ai .content');
+        const lastAssistant = aiItems?.length ? aiItems[aiItems.length - 1].textContent : '';
+        formData.append('last_assistant', lastAssistant.slice(0, 300));
+
+        try {
+            const res = await fetch(`${_apiBase}/api/stt`, { method: 'POST', body: formData });
+            if (res.ok) {
+                const data = await res.json();
+                const text = data.text?.trim();
+                const display = (data.display_text?.trim()) || text;
+                if (text && text.length > 0) {
+                    if (_subtitle) _subtitle.textContent = '';
+                    _onTranscript(text, display);
+                } else {
+                    if (_subtitle) _subtitle.textContent = '';
+                }
+            } else if (res.status === 429) {
+                if (_subtitle) _subtitle.textContent = getSubtitleText('busy');
+                setTimeout(() => { if (_subtitle) _subtitle.textContent = ''; }, 2000);
+            } else {
+                if (_subtitle) _subtitle.textContent = '';
+            }
+        } catch (err) {
+            if (_subtitle) _subtitle.textContent = err.message?.includes('Failed to fetch') ? getSubtitleText('noBackend') : '';
+        }
+    };
+
+    try { if (_pttRecorder.state !== 'inactive') _pttRecorder.stop(); } catch (_) {}
+}

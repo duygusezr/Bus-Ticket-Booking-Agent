@@ -20,7 +20,9 @@ import {
     playBase64Audio,
     stopAudio,
     toggleMute,
-    toggleVAD,
+    initPTT,
+    startPTT,
+    stopPTT,
 } from './js/audio.js';
 import {
     API_BASE,
@@ -90,26 +92,51 @@ audioBtn?.addEventListener('click', async () => {
     toggleMute(audioBtn);
 });
 
-// ─── Mikrofon: VAD Toggle ──────────────────────────────────────
-// Tek tıkla aç, tek tıkla kapat. Konuşma algılanınca otomatik kayıt.
+// ─── Mikrofon: Push-to-Talk (Bas-Konuş) ───────────────────────
+// Masaüstü: mousedown → kayıt başlar, mouseup → durur ve gönderir.
+// Dokunmatik: touchstart → kayıt başlar, touchend/touchcancel → durur.
 
-micBtn?.addEventListener('click', async () => {
-    await initWebAudio();
-    await toggleVAD(
-        micBtn,
-        // normalize metin backend'e, ham transkript ekranda görünsün
-        async (normalizedText, displayText) => {
-            if (chatInput) chatInput.value = normalizedText;
-            sendMessage(displayText);
-        },
-        API_BASE,
-        getLang,
-        subtitle,
-    );
+const _pttTranscript = async (normalizedText, displayText) => {
+    if (chatInput) chatInput.value = normalizedText;
+    sendMessage(displayText);
+};
+
+// PTT başlatıcıyı ilk etkileşimde hazırla
+let _pttInited = false;
+async function _ensurePTTInit() {
+    if (_pttInited) return;
+    _pttInited = true;
+    await initPTT(_pttTranscript, API_BASE, getLang, subtitle, micBtn);
+}
+
+micBtn?.addEventListener('mousedown', async (e) => {
+    e.preventDefault();
+    await _ensurePTTInit();
+    await startPTT();
 });
 
-// Dokunmatik ekranlar için (mousedown/mouseup artık kullanılmıyor)
-micBtn?.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+micBtn?.addEventListener('mouseup', async () => {
+    await stopPTT();
+});
+
+micBtn?.addEventListener('mouseleave', async () => {
+    await stopPTT();
+});
+
+micBtn?.addEventListener('touchstart', async (e) => {
+    e.preventDefault();
+    await _ensurePTTInit();
+    await startPTT();
+}, { passive: false });
+
+micBtn?.addEventListener('touchend', async (e) => {
+    e.preventDefault();
+    await stopPTT();
+}, { passive: false });
+
+micBtn?.addEventListener('touchcancel', async () => {
+    await stopPTT();
+});
 
 // ─── Sidebar ─────────────────────────────────────────────────
 

@@ -232,19 +232,30 @@ html {
     transform: scale(1.05);
 }
 
-/* Basılı tut modu (artık kullanılmıyor, geriye dönük uyumluluk) */
+/* Basılı tut modu (kayıt devam ediyor): kırmızı + hızlı nabız */
 .mic-btn.recording {
     background: #d32f2f !important;
-    animation: pulse 1s infinite;
+    animation: pulse 0.6s ease-in-out infinite;
+    transform: scale(1.1);
 }
 
-/* VAD aktif modu: yeşil + yavaş nabız */
+/* PTT aktif: basılı tutulurken mavi + nabız */
+.mic-btn.ptt-active {
+    background: #1565c0 !important;
+    cursor: grabbing;
+}
+
+.mic-btn.ptt-active.recording {
+    background: #d32f2f !important;
+    animation: pulse 0.6s ease-in-out infinite;
+}
+
+/* VAD geriye dönük uyumluluk */
 .mic-btn.vad-active {
     background: #2e7d32 !important;
     animation: pulse-green 2s ease-in-out infinite;
 }
 
-/* VAD aktif + ses algılandı: daha hızlı nabız */
 .mic-btn.vad-active.recording {
     background: #1b5e20 !important;
     animation: pulse-green-fast 0.6s ease-in-out infinite;
