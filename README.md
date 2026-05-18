@@ -44,6 +44,7 @@ Tüm süreç sesli veya yazılı şekilde yönetilebilir.
 # ✨ Temel Özellikler
 
 * Gerçek zamanlı sesli konuşma desteği
+* **Bas-Konuş (Push-to-Talk)** mikrofon modu
 * GPT-4o Mini tabanlı konuşma ve karar mekanizması
 * ElevenLabs Scribe v2 tabanlı ana STT sistemi
 * Gemini 2.5 Flash tabanlı yedek STT sistemi
@@ -159,10 +160,13 @@ Tüm süreç sesli veya yazılı şekilde yönetilebilir.
 # 🔄 Veri Akışı
 
 ```text
-Kullanıcı Konuşur
+Kullanıcı Butona Basar (PTT)
         │
         ▼
-VAD / Ses Algılama
+Mikrofon Açılır → Kayıt Başlar
+        │
+        ▼
+Kullanıcı Butonu Bırakır → Kayıt Durur
         │
         ▼
 STT
@@ -467,7 +471,7 @@ Frontend katmanı Cloudflare Pages üzerinde barındırılmaktadır.
 * Chat arayüzü
 * WebSocket istemcisi
 * Three.js tabanlı 3D avatar render sistemi
-* VAD ve ses kayıt istemcisi
+* **Push-to-Talk (PTT) ses kayıt istemcisi**
 * TR / EN dil seçim arayüzü
 
 ## Neden Cloudflare Pages?
@@ -832,31 +836,47 @@ Three.js Runtime
 
 ---
 
-# 🎙️ Sesli Etkileşim ve VAD Sistemi
+# 🎙️ Sesli Etkileşim — Push-to-Talk (PTT)
 
-Sistem yalnızca butona basıp kayıt alma mantığıyla çalışmaz; sesli etkileşimi daha doğal hale getirmek için VAD kullanır.
+Sistem **Bas-Konuş (Push-to-Talk)** mantığıyla çalışır.
 
-## VAD Ne Yapar?
+Mikrofon sürekli açık kalmaz; kullanıcı butona basılı tuttuğu sürece ses kaydedilir, bırakınca kayıt durur ve STT servisine gönderilir.
 
-VAD, kullanıcının konuşmaya başlayıp başlamadığını ses seviyesine göre algılar.
-
-Akış:
+## Nasıl Çalışır?
 
 ```text
-Mikrofon aktif
+Kullanıcı mikrofon butonuna basar
         │
         ▼
-Ses seviyesi ölçülür
+Mikrofon açılır, kayıt başlar
+(Buton kırmızıya döner, nabız animasyonu başlar)
         │
         ▼
-Eşik aşılırsa kayıt başlar
+Kullanıcı konuşur
         │
         ▼
-Sessizlik algılanırsa kayıt durur
+Kullanıcı butonu bırakır
         │
         ▼
-Ses STT servisine gönderilir
+Kayıt durur, ses STT servisine gönderilir
+        │
+        ▼
+Mikrofon kapatılır (izin serbest bırakılır)
 ```
+
+## Desteklenen Olaylar
+
+| Platform     | Başlat       | Durdur                      |
+| ------------ | ------------ | --------------------------- |
+| Masaüstü     | `mousedown`  | `mouseup` / `mouseleave`    |
+| Dokunmatik   | `touchstart` | `touchend` / `touchcancel`  |
+
+## Avantajları
+
+* Mikrofon yalnızca konuşulduğu süre açık kalır → gizlilik odaklı
+* Yanlışlıkla arka plan sesi kaydedilmez
+* Sistem kaynakları verimli kullanılır
+* Kullanıcı ne zaman dinlendiğini tam olarak bilir
 
 ---
 
