@@ -57,6 +57,25 @@ _NUMBER_WORDS = frozenset({
 })
 
 
+def _tr_safe_lower(text: str) -> str:
+    """
+    Türkçe karakterleri bozmayan güvenli küçük harf dönüşümü.
+    Python'un varsayılan .lower() metodu 'İ' → 'i\u0307' (bozuk) üretir.
+    Bu fonksiyon Türkçe büyük harfleri önce doğru küçük harflerine çevirir.
+    """
+    return (
+        text
+        .replace("İ", "i")   # Türkçe büyük İ → küçük i  (Python .lower() bunu bozar)
+        .replace("I", "ı")   # Türkçe büyük I → küçük ı
+        .replace("Ş", "ş")
+        .replace("Ğ", "ğ")
+        .replace("Ü", "ü")
+        .replace("Ö", "ö")
+        .replace("Ç", "ç")
+        .lower()             # Kalan Latin karakterleri küçült
+    )
+
+
 def _deduplicate(text: str) -> str:
     """Remove STT hallucination repeats (char-level and word-level)."""
     if len(text) > 3 and len(text) % 2 == 0:
@@ -91,17 +110,18 @@ def _clean_asr_text(raw: str) -> str:
     if not raw:
         return ""
     text = re.sub(r"\(([^)]*)\)", " ", raw.strip())
-    
+
     # Whisper yaygın halüsinasyonları temizle
     hallucinations = [
-        "altyazı m.k.", "altyazı m.k", "altyazi m.k.", "altyazi m.k", "m.k.", "m.k", 
+        "altyazı m.k.", "altyazı m.k", "altyazi m.k.", "altyazi m.k", "m.k.", "m.k",
         "izlediğiniz için teşekkürler", "subtitles by", "amara.org", "çeviri"
     ]
-    t_lower = text.lower()
+    # Karşılaştırma için _tr_safe_lower kullan — orijinal metni bozma
+    t_lower = _tr_safe_lower(text)
     for h in hallucinations:
         if h in t_lower:
             text = re.compile(re.escape(h), re.IGNORECASE).sub("", text)
-            
+
     text = re.sub(r"\s+", " ", text).strip()
     text = _deduplicate(text)
 
@@ -165,14 +185,19 @@ _EN_WORD_MAP: dict[str, str] = {
 
 
 def _convert_en_numbers(text: str) -> str:
-    t = text.lower()
+    """
+    Convert English number words to digits.
+    Preserves original casing for non-number parts.
+    Uses IGNORECASE flag instead of lowercasing the whole string.
+    """
+    t = text
     for word, digit in sorted(_EN_WORD_MAP.items(), key=lambda x: -len(x[0])):
-        t = re.sub(rf"\b{re.escape(word)}\b", digit, t)
+        t = re.sub(rf"\b{re.escape(word)}\b", digit, t, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", t).strip()
 
 
 # ─────────────────────────────────────────────
-# Number word → digit conversion (TR) — inline regex approach for conversational text
+# Number word → digit conversion (TR)
 # ─────────────────────────────────────────────
 
 _TR_COMPOUND_MAP: dict[str, str] = {
@@ -218,11 +243,21 @@ _TR_SINGLE_MAP: dict[str, str] = {
 
 
 def _convert_tr_numbers(text: str) -> str:
-    t = text.lower()
+    """
+    Convert Turkish number words to digits while PRESERVING original casing.
+
+    DÜZELTME: Eski kod `text.lower()` kullanıyordu.
+    Python'da 'İ'.lower() → 'i\u0307' (i + birleştirici nokta) üretir.
+    Bu Türkçe metni bozar: 'İstanbul' → 'i̇stanbul' (yanlış).
+
+    Yeni yaklaşım: Orijinal metni değiştirmeden, sadece sayı sözcüklerini
+    re.IGNORECASE ile eşleştirip rakamla değiştir.
+    """
+    t = text  # Orijinal metni koru — lowercase YAPMA
     for k, v in sorted(_TR_COMPOUND_MAP.items(), key=lambda x: -len(x[0])):
-        t = re.sub(rf"\b{re.escape(k)}\b", v, t)
+        t = re.sub(rf"\b{re.escape(k)}\b", v, t, flags=re.IGNORECASE)
     for k, v in sorted(_TR_SINGLE_MAP.items(), key=lambda x: -len(x[0])):
-        t = re.sub(rf"\b{re.escape(k)}\b", v, t)
+        t = re.sub(rf"\b{re.escape(k)}\b", v, t, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", t).strip()
 
 
@@ -266,12 +301,10 @@ async def _elevenlabs_transcribe(audio_bytes: bytes, filename: str, lang: str) -
     if not settings.ELEVENLABS_API_KEY:
         raise RuntimeError("ELEVENLABS_API_KEY ayarlanmamış. STT işlemi yapılamaz.")
 
-    # language_code: "tr" veya "en" → ElevenLabs ISO-639-1 destekliyor
     language_code = lang if lang in ("tr", "en") else None
 
     client = AsyncElevenLabs(api_key=settings.ELEVENLABS_API_KEY)
 
-    # ElevenLabs SDK file parametresi: (filename, bytes, mime_type) tuple'ı kabul ediyor
     ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ".webm"
     mime_type = _MIME_MAP.get(ext, "audio/webm")
 
@@ -286,7 +319,6 @@ async def _elevenlabs_transcribe(audio_bytes: bytes, filename: str, lang: str) -
 
     transcript = (result.text or "").strip()
 
-    # Non-Latin karakter filtresi (güvenlik)
     non_latin = re.findall(
         r'[\u0900-\u097F\u0600-\u06FF\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]',
         transcript,
@@ -355,7 +387,6 @@ async def _gemini_transcribe(audio_bytes: bytes, filename: str, lang: str) -> st
     parts = candidates[0].get("content", {}).get("parts", [])
     transcript = " ".join(p.get("text", "") for p in parts).strip()
 
-    # Non-Latin karakter filtresi (güvenlik)
     non_latin = re.findall(
         r'[\u0900-\u097F\u0600-\u06FF\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF]',
         transcript,
@@ -366,14 +397,15 @@ async def _gemini_transcribe(audio_bytes: bytes, filename: str, lang: str) -> st
 
     return transcript
 
+
 def _postprocess(text: str, lang: str, last_assistant: str = "") -> str:
     """Apply context-aware normalization to raw transcript."""
     if _is_email_context(text):
         from services.tools import _normalize_email_input
         return _normalize_email_input(text)
 
-    # İsim bağlamında normalizasyon yapma — rakama çevirme
-    if _is_name_context(last_assistant.lower()):
+    # İsim bağlamında normalizasyon yapma
+    if _is_name_context(_tr_safe_lower(last_assistant)):
         return text
 
     if _is_numeric_context(text):
@@ -383,11 +415,17 @@ def _postprocess(text: str, lang: str, last_assistant: str = "") -> str:
             return digits if digits else pre
         return extract_digit_stream(text) or text
 
+    # _convert_tr/en_numbers artık orijinal case'i koruyor
     normalized = _convert_tr_numbers(text) if lang == "tr" else _convert_en_numbers(text)
     return _collapse_numeric_sequences(normalized)
 
 
-async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settings.DEFAULT_LANG, last_assistant: str = "") -> dict:
+async def transcribe_audio(
+    audio_bytes: bytes,
+    filename: str,
+    lang: str = settings.DEFAULT_LANG,
+    last_assistant: str = "",
+) -> dict:
     """Transcribe audio via ElevenLabs Scribe (primary) → Gemini 2.5 Flash (fallback)."""
     if not audio_bytes:
         raise ValueError("Gönderilen ses verisi boş.")
@@ -422,4 +460,3 @@ async def transcribe_audio(audio_bytes: bytes, filename: str, lang: str = settin
 
     # ── Her iki provider da başarısız ────────────────────────────────────────
     raise RuntimeError(f"STT başarısız (tüm provider'lar denendi): {last_error}") from last_error
-
