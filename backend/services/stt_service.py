@@ -439,7 +439,7 @@ async def transcribe_audio(
             cleaned = _clean_asr_text(raw)
             result = _postprocess(cleaned, lang, last_assistant)
             print(f"[STT/ElevenLabs] raw={raw!r} → cleaned={cleaned!r} → final={result!r}")
-            return {"text": result, "display_text": cleaned, "lang": lang, "provider": "elevenlabs"}
+            return {"text": result, "display_text": result, "lang": lang, "provider": "elevenlabs"}
         except Exception as e:
             last_error = e
             print(f"[STT] ElevenLabs başarısız ({e!r}), Gemini fallback deneniyor…")
@@ -453,7 +453,7 @@ async def transcribe_audio(
             cleaned = _clean_asr_text(raw)
             result = _postprocess(cleaned, lang, last_assistant)
             print(f"[STT/Gemini] raw={raw!r} → cleaned={cleaned!r} → final={result!r}")
-            return {"text": result, "display_text": cleaned, "lang": lang, "provider": "gemini"}
+            return {"text": result, "display_text": result, "lang": lang, "provider": "gemini"}
         except Exception as e:
             last_error = e
             print(f"[STT] Gemini fallback da başarısız: {e!r}")
