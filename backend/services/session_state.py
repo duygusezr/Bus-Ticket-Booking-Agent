@@ -224,3 +224,32 @@ def _build_state_block_en(session: "BookingSession") -> str:
         f"{block}"
     )
 
+
+def build_truth_injection(session: BookingSession) -> str:
+    """
+    Legacy function for backward compatibility with tests.
+    Oturumdaki doğrulanmış verileri LLM'e enjekte edilecek
+    [ABSOLUTE SYSTEM TRUTH: ...] bloğuna dönüştür.
+    Boş oturum için boş string döner.
+    """
+    parts: list[str] = []
+    if session.sefer_id is not None:
+        parts.append(f"STRICT_ID={session.sefer_id}")
+    if session.departure and session.destination:
+        parts.append(f"STRICT_ROUTE={session.departure} -> {session.destination}")
+    if session.travel_date:
+        parts.append(f"STRICT_DATE={session.travel_date}")
+    if session.seat:
+        parts.append(f"STRICT_SEAT={session.seat}")
+    if session.passenger_name:
+        parts.append(f"STRICT_NAME={session.passenger_name}")
+    if session.validated_phone:
+        parts.append(f"STRICT_PHONE={session.validated_phone}")
+    if session.validated_email:
+        parts.append(f"STRICT_EMAIL={session.validated_email}")
+
+    if not parts:
+        return ""
+    return f" [ABSOLUTE SYSTEM TRUTH (ASLA HALLUCINATE ETME): {' | '.join(parts)}]"
+
+

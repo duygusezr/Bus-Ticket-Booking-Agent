@@ -609,8 +609,8 @@ export async function initPTT(onTranscript, apiBase, getLang, subtitle, micBtn) 
 
 export async function startPTT() {
     if (_pttActive) return;
-    // Avatar konuşuyorsa durdur (barge-in)
-    if (avatarIsSpeaking) stopAvatar();
+    // Avatar'ı her durumda sustur (barge-in / susturma garantisi)
+    stopAvatar();
 
     try {
         _pttStream = await navigator.mediaDevices.getUserMedia({
@@ -693,5 +693,12 @@ export async function stopPTT() {
         }
     };
 
-    try { if (_pttRecorder.state !== 'inactive') _pttRecorder.stop(); } catch (_) {}
+    // 350ms gecikme ile durdur (son kelimenin yarım kalmasını/kesilmesini önler)
+    setTimeout(() => {
+        try {
+            if (_pttRecorder && _pttRecorder.state !== 'inactive') {
+                _pttRecorder.stop();
+            }
+        } catch (_) {}
+    }, 350);
 }

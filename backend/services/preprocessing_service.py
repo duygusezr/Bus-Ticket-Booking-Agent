@@ -70,7 +70,7 @@ def _parse_natural_date(text: str, lang: str) -> Optional[str]:
 
     # "şubat 14", "temmuz 1", "ağustos 8" (TR: ay gün)
     for month_name, month_num in months_map.items():
-        m = re.search(rf"\b{month_name}\b\s*(\d{{1,2}})", t)
+        m = re.search(rf"\b{month_name}\b\s*\b(\d{{1,2}})(?:st|nd|rd|th)?\b", t)
         if m:
             day = int(m.group(1))
             year = today.year if month_num >= today.month else today.year + 1
@@ -80,7 +80,7 @@ def _parse_natural_date(text: str, lang: str) -> Optional[str]:
                 pass
 
         # "14 şubat", "8 ağustos", "1st july", "8th august" (gün ay)
-        m = re.search(rf"(\d{{1,2}})(?:st|nd|rd|th)?\s*(?:of\s*)?\b{month_name}\b", t)
+        m = re.search(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\b\s*(?:of\s*)?\b{month_name}\b", t)
         if m:
             day = int(m.group(1))
             year = today.year if month_num >= today.month else today.year + 1
