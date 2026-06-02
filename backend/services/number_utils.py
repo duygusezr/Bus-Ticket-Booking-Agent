@@ -71,13 +71,11 @@ def _merge_decade_unit(parts: list[str]) -> list[str]:
     return merged
 
 
-def extract_digit_stream(text: str) -> str:
+def _words_to_number(tokens: list[str]) -> str:
     """
-    Convert a mixed Turkish/English word+digit string into a pure digit string.
-    Handles: units, tens, hundreds, compounds, STT split artifacts.
-    Returns empty string if no digits found.
+    Convert a list of word/digit tokens representing a number sequence into digits.
+    Handles: units, tens, hundreds, compounds, raw digit tokens.
     """
-    tokens = tokenize_numeric(text)
     parts: list[str] = []
     i = 0
 
@@ -125,6 +123,75 @@ def extract_digit_stream(text: str) -> str:
 
     parts = _merge_decade_unit(parts)
     return "".join(parts)
+
+
+def extract_digit_stream(text: str) -> str:
+    """
+    Convert a mixed Turkish/English word+digit string into a pure digit string.
+    Handles: units, tens, hundreds, compounds, STT split artifacts.
+    Returns empty string if no digits found.
+    """
+    tokens = tokenize_numeric(text)
+    return _words_to_number(tokens)
+
+
+def _tc_checksum_valid(s: str) -> bool:
+    """11 haneli TC string için checksum kontrolü."""
+    if len(s) != 11 or not s.isdigit() or s[0] == "0":
+        return False
+    d = [int(x) for x in s]
+    odd_sum = d[0]+d[2]+d[4]+d[6]+d[8]
+    even_sum = d[1]+d[3]+d[5]+d[7]
+    return d[9] == ((odd_sum*7)-even_sum)%10 and d[10] == sum(d[:10])%10
+
+
+def extract_tc_digit_stream(text: str) -> str:
+    """
+    TC Kimlik numarası için özel digit çıkarıcı.
+
+    TC okunuşu genellikle 2'li gruplar halindedir:
+      "kırk iki, kırk dört, otuz yedi, yirmi dokuz, kırk yedi, altı"
+      → 42   44   37        29          47            6
+      → "42443729476"  (11 hane ✓)
+
+    Virgüllü girişte her grup ayrı parse edilir, sonra birleştirilir.
+    Pad yapılmaz — TC grupları toplamı zaten 11 hane eder.
+    Sonuç 11'den fazlaysa checksum'a uyan dilim seçilir.
+
+    Virgül yoksa standart extract_digit_stream'e düşer.
+    """
+    normalized = normalize_text(text)
+
+    # Virgül veya noktalı virgül içeriyorsa grup bazlı parse et
+    if re.search(r"[,;]", normalized):
+        raw_parts = re.split(r"[,;]+", normalized)
+        digit_parts: list[str] = []
+        for part in raw_parts:
+            part = part.strip()
+            if not part:
+                continue
+            tokens = tokenize_numeric(part)
+            if not tokens:
+                continue
+            val = _words_to_number(tokens)
+            if val:
+                digit_parts.append(val)
+
+        if digit_parts:
+            result = "".join(digit_parts)
+            if len(result) == 11:
+                return result
+            # 11'den fazlaysa checksum'a uyan dilimi bul
+            if len(result) > 11:
+                for i in range(len(result) - 10):
+                    cand = result[i:i + 11]
+                    if _tc_checksum_valid(cand):
+                        return cand
+                return result[:11]
+            return result  # 11'den azsa döndür (hatalı giriş — validate_tc_kimlik yakalar)
+
+    # Virgül yok: standart davranış
+    return extract_digit_stream(text)
 
 
 def normalize_phone_digits(text: str) -> str:
