@@ -9,6 +9,7 @@ import httpx
 from services.number_utils import (
     normalize_text,
     extract_digit_stream,
+    extract_tc_digit_stream,
     normalize_phone_digits,
     UNIT_MAP,
     TEN_MAP,
@@ -156,6 +157,29 @@ def _is_name_context(history_last: str) -> bool:
         "full name", "your name", "passenger name", "name please", "name?",
     ]
     return any(kw in history_last for kw in name_keywords)
+
+
+def _is_tc_context(text: str) -> bool:
+    """
+    Virgüllü TC okunuşunu tespit et.
+    "otuz yedi, elli altı, yetmiş, altmış bir, yirmi yedi, dört" gibi
+    virgülle ayrılmış 5-7 sayı grubu → TC girişi.
+    """
+    t = normalize_text(text)
+    # Virgül veya noktalı virgül var mı?
+    if not re.search(r"[,;]", t):
+        return False
+    # Virgüllerle ayrılmış grupları say
+    parts = [p.strip() for p in re.split(r"[,;]+", t) if p.strip()]
+    if len(parts) < 4:
+        return False
+    # Her grup sayı kelimesi veya rakam içeriyor mu?
+    numeric_groups = 0
+    for part in parts:
+        tokens = re.sub(r"[^a-z0-9\s]", " ", part).split()
+        if any(tok.isdigit() or tok in _NUMBER_WORDS for tok in tokens):
+            numeric_groups += 1
+    return numeric_groups >= len(parts) * 0.7
 
 
 def _is_numeric_context(text: str) -> bool:
@@ -407,6 +431,13 @@ def _postprocess(text: str, lang: str, last_assistant: str = "") -> str:
     # İsim bağlamında normalizasyon yapma
     if _is_name_context(_tr_safe_lower(last_assistant)):
         return text
+
+    # TC kimlik: virgüllü grup okunuşu → extract_tc_digit_stream ile çevir
+    if _is_tc_context(text):
+        result = extract_tc_digit_stream(text)
+        if result:
+            print(f"[STT/TC] TC context algılandı: {text!r} → {result!r}")
+            return result
 
     if _is_numeric_context(text):
         if lang == "en":
