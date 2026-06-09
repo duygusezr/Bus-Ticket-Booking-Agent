@@ -45,7 +45,7 @@ Tüm süreç sesli veya yazılı şekilde yönetilebilir.
 
 * Gerçek zamanlı sesli konuşma desteği
 * **Bas-Konuş (Push-to-Talk)** mikrofon modu
-* GPT modeli `gpt-4.1-mini` olan OpenAI Chat Completions tabanlı konuşma ve karar mekanizması (`OPENAI_CHAT_MODEL` ile değiştirilebilir)
+* GPT-4o Mini tabanlı konuşma ve karar mekanizması
 * ElevenLabs Scribe v2 tabanlı ana STT sistemi
 * Gemini 2.5 Flash tabanlı yedek STT sistemi
 * Microsoft Edge-TTS tabanlı ücretsiz seslendirme sistemi
@@ -56,9 +56,9 @@ Tüm süreç sesli veya yazılı şekilde yönetilebilir.
 * WebSocket tabanlı streaming iletişim
 * VRM tabanlı 3D avatar desteği
 * Dudak senkronizasyonu, göz kırpma ve idle animasyonlar
-* Cloudflare Pages üzerinde statik frontend + Railway backend deployment mimarisi; VRM modelleri backend `/models` endpointinden servis edilir
+* Cloudflare Pages + Railway + Cloudflare R2 deployment mimarisi
 * SQLite + PostgreSQL dual-write veritabanı mimarisi
-* Semantic cache kodu devre dışıdır; tekrar etkinleştirmek için ayrı cache servisi gerekir
+* Semantic cache ile düşük gecikmeli tekrar yanıt desteği
 
 ---
 
@@ -102,7 +102,7 @@ Tüm süreç sesli veya yazılı şekilde yönetilebilir.
 │                         │                                    │
 │                         ▼                                    │
 │  ┌──────────────────────────────────────────────────────┐    │
-│  │                 GPT-4.1 Mini                          │    │
+│  │                 GPT-4o Mini                          │    │
 │  │                                                      │    │
 │  │ - Conversation Management                            │    │
 │  │ - Function Calling                                   │    │
@@ -129,8 +129,8 @@ Tüm süreç sesli veya yazılı şekilde yönetilebilir.
 │  │  STT       │  │ Memory       │  │ Semantic     │          │
 │  │ Services   │  │ Service      │  │ Cache        │          │
 │  ├────────────┤  ├──────────────┤  ├──────────────┤          │
-│  │ ElevenLabs │  │ Rolling      │  │ Disabled     │          │
-│  │ Gemini     │  │ Summary      │  │ Dead Code    │          │
+│  │ ElevenLabs │  │ Rolling      │  │ MiniLM       │          │
+│  │ Gemini     │  │ Summary      │  │ Cosine Sim.  │          │
 │  └────────────┘  └──────────────┘  └──────────────┘          │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐    │
@@ -159,299 +159,44 @@ Tüm süreç sesli veya yazılı şekilde yönetilebilir.
 
 # 🔄 Veri Akışı
 
-Aşağıdaki akış kodun güncel çalışma şekline göre hazırlanmıştır. Sesli kullanımda **STT, LLM'den önce** çalışır; yazılı kullanımda STT adımı atlanır. TTS ise LLM yanıtından sonra çalışır.
-
 ```text
-Kullanıcı
-↓
-Frontend
-↓
-Backend
-↓
-STT (yalnızca sesli girişte)
-↓
-LLM
-↓
-Backend tool fonksiyonları / veritabanı
-↓
+Kullanıcı Butona Basar (PTT)
+        │
+        ▼
+Mikrofon Açılır → Kayıt Başlar
+        │
+        ▼
+Kullanıcı Butonu Bırakır → Kayıt Durur
+        │
+        ▼
+STT
+ElevenLabs Scribe v2 / Gemini 2.5 Flash
+        │
+        ▼
+Metin Normalizasyonu
+number_utils.py
+        │
+        ▼
+GPT-4o Mini
+        │
+        ▼
+Function Calling
+        │
+        ▼
+Rezervasyon Araçları
+        │
+        ▼
+Yanıt Oluşturma
+        │
+        ▼
 TTS
-↓
-Frontend
-↓
-Kullanıcıya metin + ses + avatar tepkisi
-```
-
-## 1. Kullanıcı
-
-Kullanıcı sistemle iki şekilde etkileşir:
-
-* Yazılı mesaj: chat input üzerinden gönderilir.
-* Sesli mesaj: mikrofon butonu, Push-to-Talk veya VAD akışıyla kaydedilir.
-
-Örnek kullanıcı niyeti:
-
-```text
-Yarın Ankara'dan İstanbul'a gitmek istiyorum.
-```
-
-## 2. Frontend
-
-Frontend statik HTML, CSS ve Vanilla JavaScript ile çalışır. Ana dosyalar:
-
-```text
-frontend/index.html
-frontend/main.js
-frontend/js/chat.js
-frontend/js/audio.js
-frontend/js/avatar.js
-frontend/js/seatmap.js
-```
-
-Frontend görevleri:
-
-* Kullanıcı mesajını alır.
-* Mikrofon kaydı için `getUserMedia` ve `MediaRecorder` kullanır.
-* Yazılı chat mesajlarını WebSocket ile `/ws/chat` endpointine gönderir.
-* Ses kayıtlarını multipart form olarak `/api/stt` endpointine gönderir.
-* Backend'den gelen metni chat paneline yazar.
-* Backend'den gelen base64 MP3 sesi `AudioContext` ile oynatır.
-* Word boundary veya metin tabanlı viseme verisiyle VRM avatar lip-sync yapar.
-* Backend `seat_map` eventi gönderirse koltuk haritası popup'ını açar.
-
-Yazılı mesaj payload örneği:
-
-```json
-{
-  "text": "Yarın Ankara'dan İstanbul'a gitmek istiyorum",
-  "lang": "tr",
-  "history": [],
-  "session_id": "...",
-  "voice": "default"
-}
-```
-
-Sesli girişte frontend önce ses dosyası gönderir:
-
-```text
-file = recording.webm
-lang = tr/en
-last_assistant = son asistan mesajı
-```
-
-## 3. Backend
-
-Backend FastAPI uygulamasıdır. Ana giriş noktaları:
-
-```text
-backend/main.py
-backend/routers/chat.py
-backend/routers/stt.py
-backend/routers/tts.py
-```
-
-Backend görevleri:
-
-* CORS, GZip ve lifecycle işlemlerini yönetir.
-* SQLite veritabanlarını başlatır.
-* `DATABASE_URL` varsa PostgreSQL bağlantısını açar ve seed/sync işlemlerini yapar.
-* REST ve WebSocket chat isteklerini işler.
-* STT, LLM, tool calling ve TTS servislerini sırayla çalıştırır.
-* `/models` üzerinden VRM model dosyalarını servis eder.
-
-## 4. STT Akışı
-
-STT yalnızca sesli girişte çalışır.
-
-```text
-Frontend audio/webm gönderir
-↓
-POST /api/stt
-↓
-backend/routers/stt.py
-↓
-services/stt_service.py
-↓
-ElevenLabs Scribe v2 denenir
-↓ başarısız olursa
-Gemini 2.5 Flash fallback denenir
-↓
-ASR temizleme + sayı/e-posta/TC/telefon normalizasyonu
-↓
-Frontend'e metin döner
-↓
-Frontend bu metni normal chat mesajı gibi /ws/chat'e gönderir
-```
-
-STT provider sırası:
-
-1. ElevenLabs Scribe v2 (`ELEVENLABS_STT_MODEL`, varsayılan `scribe_v2`)
-2. Gemini 2.5 Flash (`GEMINI_STT_MODEL`, varsayılan `gemini-2.5-flash`)
-
-STT sonrası örnek düzeltmeler:
-
-```text
-"elli dört" → "54"
-"ad soyad et gmail nokta com" → "adsoyad@gmail.com"
-"otuz yedi, elli altı..." → TC kimlik digit stream
-```
-
-## 5. LLM Akışı
-
-LLM akışı `backend/services/llm_service.py` içinde yönetilir.
-
-```text
-/ws/chat mesajı alınır
-↓
-preprocess_request()
-↓
-generate_chat_response()
-↓
-OpenAI Chat Completions API
-↓
-Gerekirse tool/function calling
-↓
-Final asistan yanıtı
-```
-
-Model env değişkeniyle belirlenir:
-
-```text
-OPENAI_CHAT_MODEL
-```
-
-Kullanılan GPT modeli kod fallback'ine göre açıkça şudur:
-
-```text
-gpt-4.1-mini
-```
-
-LLM'e verilen bağlam:
-
-* Türkçe/İngilizce sistem promptu.
-* Güncel tarih ve saat.
-* Son konuşma geçmişi.
-* Rolling summary memory.
-* Session state ve doğrulanmış rezervasyon bilgileri.
-* Kullanıcı mesajı.
-
-LLM'in çağırabildiği backend araçları:
-
-```text
-get_bus_trips
-validate_seat_selection
-validate_tc_number
-validate_phone_number
-validate_email_address
-make_reservation
-```
-
-## 6. Backend Tool ve Veritabanı Akışı
-
-LLM tool call yaptığında gerçek Python fonksiyonları çalışır.
-
-Sefer arama:
-
-```text
-LLM → get_bus_trips
-↓
-bilet_sistemi.db okunur
-↓
-Uygun seferler ve boş koltuklar bulunur
-↓
-Tool sonucu LLM'e döner
-↓
-LLM kullanıcıya seferleri açıklar
-```
-
-Rezervasyon oluşturma:
-
-```text
-LLM → make_reservation
-↓
-TC kimlik doğrulanır
-↓
-Koltuk uygunluğu kontrol edilir
-↓
-SQLite sefer kaydında boş koltuk listesi güncellenir
-↓
-rezervasyonlar.db içine kayıt yazılır
-↓
-DATABASE_URL varsa PostgreSQL'e dual-write yapılır
-↓
-rezervasyonlar.csv tam sync edilir
-↓
-PNR kodu LLM'e döner
-↓
-LLM kullanıcıya rezervasyon sonucunu açıklar
-```
-
-Veri katmanları:
-
-```text
-SQLite: ana/lokal veri
-PostgreSQL: DATABASE_URL varsa dual-write kopya
-CSV: rezervasyon yedeği/senkron çıktı
-```
-
-## 7. TTS Akışı
-
-LLM final yanıtı üretildikten sonra TTS çalışır.
-
-```text
-LLM final metni
-↓
-backend/services/tts_service.py
-↓
 Microsoft Edge-TTS
-↓
-Base64 MP3 + word boundary bilgisi
-↓
-WebSocket audio eventi veya REST response
-↓
-Frontend AudioContext ile sesi çalar
-↓
-Avatar lip-sync yapar
-```
-
-Kullanılan sesler:
-
-```text
-tr kadın: tr-TR-EmelNeural
-tr erkek: tr-TR-AhmetNeural
-en kadın: en-US-AriaNeural
-en erkek: en-US-GuyNeural
-```
-
-TTS cevabı örneği:
-
-```json
-{
-  "audio": "base64-mp3...",
-  "words": [
-    [120, 80, "Merhaba"]
-  ]
-}
-```
-
-## 8. Frontend'e Dönüş
-
-WebSocket üzerinden gönderilen eventler:
-
-```text
-type: text      → LLM cevabı
-type: audio     → base64 MP3 + word timing
-type: seat_map  → koltuk haritası verisi
-type: emotion   → avatar duygu durumu
-type: done      → işlem tamamlandı
-```
-
-Frontend tarafında:
-
-```text
-chat.js    → metni gösterir
-audio.js   → sesi oynatır
-avatar.js  → lip-sync ve animasyonları yapar
-seatmap.js → koltuk haritasını gösterir
+        │
+        ▼
+3D Avatar Lip-Sync
+        │
+        ▼
+Kullanıcıya Sesli ve Yazılı Yanıt
 ```
 
 ---
@@ -466,7 +211,7 @@ Proje geliştirme sürecinde farklı LLM, STT ve TTS sistemleri test edilmiş; m
 
 | Modül                | Kullanılan Model     | Hız       | Doğruluk   | Tahmini Maliyet (1000 Karşılıklı Mesaj) |
 | -------------------- | -------------------- | --------- | ---------- | --------------------------------------- |
-| Zekâ / Chat & Bellek | GPT-4.1 Mini (`gpt-4.1-mini`) | Çok hızlı | Çok yüksek | ~$0.01                                  |
+| Zekâ / Chat & Bellek | GPT-4o Mini          | Çok hızlı | Çok yüksek | ~$0.01                                  |
 | Duyma / Ana STT      | ElevenLabs Scribe v2 | Hızlı     | En yüksek  | ~$1.50                                  |
 | Duyma / Yedek STT    | Gemini 2.5 Flash     | Hızlı     | Yüksek     | ~$0.05                                  |
 | Konuşma / TTS        | Microsoft Edge-TTS   | Anlık     | Çok doğal  | Ücretsiz                                |
@@ -477,18 +222,18 @@ Proje geliştirme sürecinde farklı LLM, STT ve TTS sistemleri test edilmiş; m
 
 | Model            | Ortalama Gecikme | Türkçe Performansı | Tool Calling | Maliyet   | Sonuç                     |
 | ---------------- | ---------------- | ------------------ | ------------ | --------- | ------------------------- |
-| GPT-4.1 Mini (`gpt-4.1-mini`) | ~1-2s | Çok yüksek | Çok iyi | Çok düşük | Ana model |
+| GPT-4o Mini      | ~1-2s            | Çok yüksek         | Çok iyi      | Çok düşük | Ana model                 |
 | Gemini 2.5 Flash | ~1-3s            | Çok yüksek         | İyi          | Düşük     | Alternatif / STT fallback |
 | Claude Sonnet    | ~2-4s            | Orta-yüksek        | İyi          | Yüksek    | Test edildi               |
 | Gemini 1.5 Flash | ~1-2s            | Orta-yüksek        | İyi          | Düşük     | Önceki test modeli        |
 
 ---
 
-# 🤖 Zekâ ve Karar Mekanizması — GPT-4.1 Mini
+# 🤖 Zekâ ve Karar Mekanizması — GPT-4o Mini
 
-## Neden GPT-4.1 Mini Seçildi?
+## Neden GPT-4o Mini Seçildi?
 
-GPT-4.1 Mini (`gpt-4.1-mini`);
+GPT-4o Mini;
 
 * düşük gecikme süresi,
 * güçlü function-calling yeteneği,
@@ -500,7 +245,7 @@ nedeniyle ana konuşma modeli olarak tercih edilmiştir.
 
 ## Sistemdeki Görevleri
 
-GPT-4.1 Mini sistemde şu görevleri yürütür:
+GPT-4o Mini sistemde şu görevleri yürütür:
 
 * kullanıcının niyetini anlama,
 * rezervasyon akışını yönetme,
@@ -523,14 +268,14 @@ GPT-4.1 Mini sistemde şu görevleri yürütür:
 
 ## Maliyet Değerlendirmesi
 
-GPT-4.1 Mini, düşük maliyetli profesyonel LLM seçeneklerinden biridir.
+GPT-4o Mini, düşük maliyetli profesyonel LLM seçeneklerinden biridir.
 
 Yaklaşık değerlendirme:
 
 * 35.000 token kullanım maliyeti oldukça düşüktür.
 * 1000 karşılıklı mesaj için tahmini maliyet yaklaşık ~$0.01 seviyesindedir.
 * Rolling Summary Memory sayesinde her mesajda tüm geçmişin gönderilmesi engellenir.
-* Semantic cache şu an aktif değildir; token kullanımını esas olarak rolling summary memory azaltır.
+* Semantic cache sayesinde benzer mesajlarda tekrar LLM çağrısı yapılması azaltılır.
 
 ---
 
@@ -684,12 +429,12 @@ Microsoft Edge-TTS sistemin metinden sese dönüştürme servisidir.
 
 | Teknoloji            | Ortalama İşlem Maliyeti |
 | -------------------- | ----------------------- |
-| GPT-4.1 Mini (`gpt-4.1-mini`) | Çok düşük |
+| GPT-4o Mini          | Çok düşük               |
 | ElevenLabs STT       | Orta                    |
 | Gemini 2.5 Flash STT | Çok düşük               |
 | Edge-TTS             | Ücretsiz                |
 
-Rolling Summary Memory sayesinde uzun konuşmalarda token kullanımı azaltılır. Semantic cache kodu şu an devre dışıdır.
+Rolling Summary Memory ve semantic cache sistemi sayesinde token kullanımı önemli ölçüde azaltılmıştır.
 
 ---
 
@@ -701,7 +446,7 @@ Rolling Summary Memory sayesinde uzun konuşmalarda token kullanımı azaltılı
 | STT Süresi         | ~1-2s      |
 | LLM Yanıt Süresi   | ~1-3s      |
 | TTS Başlatma       | ~300-700ms |
-| Semantic Cache Hit | Aktif değil |
+| Semantic Cache Hit | ~5ms       |
 | Avatar Render      | 60 FPS     |
 
 Sistem gerçek zamanlı konuşma deneyimine uygun şekilde optimize edilmiştir.
@@ -756,12 +501,12 @@ Backend katmanı Railway üzerinde Docker container olarak çalıştırılmaktad
 * WebSocket `/ws/chat` endpointi
 * STT endpointi
 * TTS endpointi
-* GPT-4.1 Mini (`gpt-4.1-mini`) entegrasyonu
+* GPT-4o Mini entegrasyonu
 * Function calling sistemi
 * Rezervasyon araçları
 * PostgreSQL bağlantısı
 * Memory service
-* Semantic cache dosyası (kodda devre dışı/dead code; çalışan akışta kullanılmaz)
+* Semantic cache katmanı
 * Veritabanı işlemleri
 * Environment variable yönetimi
 
@@ -806,32 +551,76 @@ Bu nedenle sistem mimarisi şu şekilde ayrılmıştır:
 ```text
 Cloudflare Pages → Frontend
 Railway → Backend API / WebSocket
-Railway `/models` → VRM dosyaları
+Cloudflare R2 → Büyük VRM dosyaları
 ```
 
 Bu ayrım hem performans hem de yönetilebilirlik açısından daha stabil sonuç vermiştir.
 
 ---
 
-## 🧊 VRM Model Servisleme
+## 🧊 Cloudflare R2 — VRM Dosya Depolama
 
-Güncel kodda VRM dosyaları production ortamında Railway backend üzerinden servis edilir.
+3D avatar dosyaları Cloudflare R2 Object Storage üzerinde barındırılmaktadır.
 
-Backend başlangıcında `main.py` şu klasörü `/models` path'ine mount eder:
+## R2 Üzerinde Tutulan Dosyalar
+
+* `.vrm` avatar dosyaları
+* büyük binary model dosyaları
+* runtime sırasında frontend tarafından fetch edilen 3D karakter assetleri
+
+## Neden Cloudflare R2?
+
+VRM dosyaları frontend bundle içerisine koymak için fazla büyüktür.
+
+VRM dosyaları:
+
+* büyük boyutlu,
+* binary formatta,
+* sık erişilen,
+* CDN gerektiren
+
+assetlerdir.
+
+R2 sayesinde:
+
+* düşük maliyetli object storage,
+* CDN üzerinden hızlı erişim,
+* global cache,
+* düşük bandwidth maliyeti,
+* frontend deploy boyutunu küçük tutma
+
+sağlanmıştır.
+
+---
+
+## ⚠️ Cloudflare Pages Asset Limiti
+
+Cloudflare Pages tek dosya için yaklaşık 25MB asset limiti uygulamaktadır.
+
+Bazı VRM karakterleri:
 
 ```text
-models/
-├── Female_Adult_01_facial.vrm
-└── Male_Adult_11_facial.vrm
+30MB+
 ```
 
-Frontend `avatar.js` içinde production model base URL'i şu endpointtir:
+boyutuna ulaştığı için sistem mimarisi değiştirilmiştir.
+
+## Çözüm
+
+VRM dosyaları frontend içerisine gömülmek yerine:
 
 ```text
-https://bus-ticket-booking-agent-production.up.railway.app/models
+Cloudflare R2 → CDN → Runtime Fetch
 ```
 
-Bu nedenle avatar dosyaları runtime sırasında frontend tarafından backend `/models` endpointinden alınır.
+mimarisi ile ayrı servis edilmektedir.
+
+Bu yapı sayesinde:
+
+* deploy boyutu küçülmüş,
+* yükleme süreleri iyileşmiş,
+* CDN cache performansı artmış,
+* frontend build limitleri aşılmıştır.
 
 ---
 
@@ -857,7 +646,7 @@ SQLite geliştirme ve lokal test ortamı için kullanılır.
 
 ## PostgreSQL
 
-PostgreSQL production ortamında `DATABASE_URL` tanımlıysa opsiyonel dual-write veritabanı olarak kullanılır. Kodda birincil yazma akışı SQLite üzerine yapılır; PostgreSQL bu verinin async kopyası/senkron hedefidir.
+PostgreSQL production ortamında ana veritabanı olarak kullanılmaktadır.
 
 ## Avantajları
 
@@ -931,18 +720,33 @@ Bu yapı sayesinde:
 
 ---
 
-# 🧠 Semantic Cache Durumu
+# 🧠 Semantic Cache Sistemi
 
-Projede `backend/services/semantic_cache_service.py` dosyası bulunur; ancak güncel kodda bu özellik devre dışıdır ve production akışında import edilmez.
+Sistemde semantic cache katmanı bulunmaktadır.
 
-Kod içindeki nota göre semantic cache daha önce denenmiş, fakat `numpy` ve `sentence-transformers` bağımlılıkları aktif `requirements.txt` dosyasına eklenmemiştir. Bu nedenle şu an çalışan mimaride tekrar yanıt cache'i yoktur.
+## Kullanım Amacı
 
-Gelecekte yeniden etkinleştirmek için önerilen yaklaşım:
+Benzer kullanıcı sorularında tekrar LLM çağrısı yapılmasını engellemek.
 
-* Bağımsız bir cache servisi yazmak.
-* Redis gibi dış bir cache katmanı kullanmak.
-* Gerekli embedding bağımlılıklarını açıkça `requirements.txt` içine eklemek.
-* Chat akışına opsiyonel ve güvenli şekilde bağlamak.
+## Kullanılan Teknoloji
+
+```text
+SentenceTransformers MiniLM
++ Cosine Similarity
+```
+
+## Avantajları
+
+* Daha düşük token maliyeti
+* Daha hızlı yanıt
+* Daha düşük API kullanımı
+* Daha düşük gecikme
+
+## Ortalama Cache Hit Süresi
+
+```text
+~5ms
+```
 
 ---
 
@@ -1024,7 +828,7 @@ UniVRM Export
 VRM 1.0
         │
         ▼
-Railway `/models`
+Cloudflare R2
         │
         ▼
 Three.js Runtime
@@ -1092,72 +896,61 @@ Bu yapı sayesinde kullanıcı, klasik IVR sistemlerindeki gibi uzun sesli yanı
 | WebSocket                   | Streaming iletişim    |
 | Three.js                    | 3D render             |
 | @pixiv/three-vrm            | VRM runtime           |
-| GPT-4.1 Mini (`gpt-4.1-mini`) / OpenAI Chat Completions | Ana LLM |
+| OpenAI GPT-4o Mini          | Ana LLM               |
 | ElevenLabs Scribe v2        | Ana STT               |
 | Gemini 2.5 Flash            | Yedek STT             |
 | Microsoft Edge-TTS          | TTS                   |
 | SQLite                      | Lokal veritabanı      |
-| PostgreSQL                  | Opsiyonel production dual-write veritabanı |
+| PostgreSQL                  | Production veritabanı |
 | Cloudflare Pages            | Frontend hosting      |
-| Railway `/models`               | VRM depolama          |
+| Cloudflare R2               | VRM depolama          |
 | Railway                     | Backend hosting       |
 | Unity 6                     | Avatar düzenleme      |
 | UniVRM                      | VRM export            |
-| Semantic cache | Şu an aktif değil; eski/opsiyonel kod notu |
+| SentenceTransformers MiniLM | Semantic cache        |
 
 ---
 
 # 📁 Proje Yapısı
 
 ```text
-Bus-Ticket-Booking-Agent/
-├── Dockerfile
-├── docker-compose.yml
-├── railway.toml
-├── nginx.conf
-├── README.md
+frontend/
+├── index.html
+├── style.css
+├── main.js
+├── js/
+│   ├── avatar.js
+│   ├── audio.js
+│   └── chat.js
+│
 ├── models/
-│   ├── Female_Adult_01_facial.vrm
-│   └── Male_Adult_11_facial.vrm
-├── frontend/
-│   ├── index.html
-│   ├── style.css
-│   ├── main.js
-│   ├── avatar_icon.png
-│   ├── arkaplan.jpeg
-│   ├── house_bg.jpg
-│   └── js/
-│       ├── avatar.js
-│       ├── audio.js
-│       ├── chat.js
-│       └── seatmap.js
-└── backend/
-    ├── main.py
-    ├── config.py
-    ├── requirements.txt
-    ├── prompts/
-    │   ├── system_tr.txt
-    │   └── system_en.txt
-    ├── routers/
-    │   ├── chat.py
-    │   ├── stt.py
-    │   └── tts.py
-    ├── services/
-    │   ├── llm_service.py
-    │   ├── stt_service.py
-    │   ├── tts_service.py
-    │   ├── memory_service.py
-    │   ├── semantic_cache_service.py
-    │   ├── postgres_service.py
-    │   ├── preprocessing_service.py
-    │   ├── session_state.py
-    │   ├── number_utils.py
-    │   └── tools.py
-    └── database/
-        ├── bilet_sistemi.db
-        ├── rezervasyonlar.db
-        ├── rezervasyonlar.csv
-        └── memory.db
+│   └── *.vrm
+│
+└── assets/
+
+backend/
+├── main.py
+├── config.py
+├── requirements.txt
+├── routers/
+│   ├── chat.py
+│   ├── stt.py
+│   └── tts.py
+│
+├── services/
+│   ├── llm_service.py
+│   ├── stt_service.py
+│   ├── tts_service.py
+│   ├── memory_service.py
+│   ├── semantic_cache_service.py
+│   ├── number_utils.py
+│   └── tools.py
+│
+└── database/
+    ├── bilet_sistemi.db
+    ├── rezervasyonlar.db
+    ├── bilet_sistemi.csv
+    └── rezervasyonlar.csv
 ```
 
 ---
@@ -1185,7 +978,7 @@ OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 ELEVENLABS_API_KEY=YOUR_ELEVENLABS_API_KEY
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 
-OPENAI_CHAT_MODEL=gpt-4.1-mini
+OPENAI_CHAT_MODEL=gpt-4o-mini
 
 DATABASE_URL=YOUR_POSTGRESQL_URL
 
@@ -1215,7 +1008,7 @@ Sistem production odaklı güvenlik yaklaşımıyla tasarlanmıştır.
 * Tool-call doğrulama sistemi
 * Hallucination prevention injection
 * Rolling Summary Memory
-* Semantic cache izolasyonu (özellik aktif değildir)
+* Semantic cache izolasyonu
 * Environment variable izolasyonu
 * API fallback sistemi
 * WebSocket hata toleransı
