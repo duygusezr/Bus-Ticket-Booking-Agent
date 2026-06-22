@@ -47,6 +47,40 @@ const SECTION_GAP_AFTER = 6; // col 6'dan sonra görsel ara boşluk
 
 let _overlay     = null;
 let _availableSet = new Set();
+let _lang         = 'tr';
+
+const _T = {
+    tr: {
+        title:        'Koltuk Seçimi',
+        subtitle:     'Lütfen boş bir koltuk seçin',
+        legAvail:     'Boş Koltuk',
+        legOcc:       'Dolu Koltuk',
+        legSel:       'Seçilen Koltuk',
+        confirmBtn:   'Onayla ve Devam Et',
+        noneSelected: 'Henüz koltuk seçilmedi',
+        selected:     n => `Seçilen koltuk: ${n}`,
+        confirmed:    n => `✓ ${n} numaralı koltuk onaylandı!`,
+        seatAvail:    n => `Koltuk ${n} — Boş`,
+        seatOcc:      n => `Koltuk ${n} — Dolu`,
+    },
+    en: {
+        title:        'Seat Selection',
+        subtitle:     'Please select an available seat',
+        legAvail:     'Available Seat',
+        legOcc:       'Occupied Seat',
+        legSel:       'Selected Seat',
+        confirmBtn:   'Confirm and Continue',
+        noneSelected: 'No seat selected yet',
+        selected:     n => `Selected seat: ${n}`,
+        confirmed:    n => `✓ Seat ${n} confirmed!`,
+        seatAvail:    n => `Seat ${n} — Available`,
+        seatOcc:      n => `Seat ${n} — Occupied`,
+    },
+};
+
+function _t() {
+    return _T[_lang] || _T.tr;
+}
 
 /**
  * Popup açıkken gelen metinde koltuk numarası var mı diye kontrol eder.
@@ -74,7 +108,7 @@ export function trySelectSeatFromText(text) {
     // Bilgi kutusunu "Onaylandı!" olarak güncelle ve yeşile dönüştür
     const info = document.getElementById('smi-info');
     if (info) {
-        info.textContent = `✓ ${num} numaralı koltuk onaylandı!`;
+        info.textContent = _t().confirmed(num);
         info.style.background = '#d4f4da';
         info.style.color      = '#1a7a30';
     }
@@ -94,8 +128,9 @@ export function trySelectSeatFromText(text) {
  * @param {string}   occupiedSeatsStr   Virgülle ayrılmış dolu koltuk no'ları
  * @param {function} onConfirm          (seatNo: number) → void
  */
-export function showSeatMap(availableSeatsStr, occupiedSeatsStr, onConfirm) {
+export function showSeatMap(availableSeatsStr, occupiedSeatsStr, onConfirm, lang = 'tr') {
     if (_overlay) _overlay.remove();
+    _lang = (lang === 'en') ? 'en' : 'tr';
 
     const availableSet = _parseSeats(availableSeatsStr);
     _availableSet = availableSet; // trySelectSeatFromText için koru
@@ -127,7 +162,7 @@ export function showSeatMap(availableSeatsStr, occupiedSeatsStr, onConfirm) {
     const info = document.createElement('div');
     info.className = 'seat-selection-info';
     info.id = 'smi-info';
-    info.textContent = 'Henüz koltuk seçilmedi';
+    info.textContent = _t().noneSelected;
     body.appendChild(info);
 
     box.appendChild(body);
@@ -146,7 +181,7 @@ export function showSeatMap(availableSeatsStr, occupiedSeatsStr, onConfirm) {
         if (el) el.classList.add('selected');
         selectedSeat = num;
         const infoEl = document.getElementById('smi-info');
-        if (infoEl) infoEl.textContent = `Seçilen koltuk: ${num}`;
+        if (infoEl) infoEl.textContent = _t().selected(num);
         const btn = document.getElementById('smi-confirm');
         if (btn) { btn.disabled = false; btn.classList.remove('disabled'); }
     }
@@ -179,8 +214,8 @@ function _buildHeader() {
     const h = document.createElement('div');
     h.className = 'seat-map-header';
     h.innerHTML = `
-        <div class="smi-title"><i class="fa-solid fa-bus"></i> Koltuk Seçimi</div>
-        <div class="smi-sub">Lütfen boş bir koltuk seçin</div>
+        <div class="smi-title"><i class="fa-solid fa-bus"></i> ${_t().title}</div>
+        <div class="smi-sub">${_t().subtitle}</div>
     `;
     return h;
 }
@@ -189,9 +224,9 @@ function _buildLegend() {
     const l = document.createElement('div');
     l.className = 'smi-legend';
     l.innerHTML = `
-        <div class="smi-leg-item"><div class="smi-leg-box smi-avail"></div><span>Boş Koltuk</span></div>
-        <div class="smi-leg-item"><div class="smi-leg-box smi-occ"></div><span>Dolu Koltuk</span></div>
-        <div class="smi-leg-item"><div class="smi-leg-box smi-sel"></div><span>Seçilen Koltuk</span></div>
+        <div class="smi-leg-item"><div class="smi-leg-box smi-avail"></div><span>${_t().legAvail}</span></div>
+        <div class="smi-leg-item"><div class="smi-leg-box smi-occ"></div><span>${_t().legOcc}</span></div>
+        <div class="smi-leg-item"><div class="smi-leg-box smi-sel"></div><span>${_t().legSel}</span></div>
     `;
     return l;
 }
@@ -203,7 +238,7 @@ function _buildFooter() {
     btn.className = 'seat-confirm-btn disabled';
     btn.id = 'smi-confirm';
     btn.disabled = true;
-    btn.innerHTML = `<i class="fa-solid fa-check"></i> Onayla ve Devam Et`;
+    btn.innerHTML = `<i class="fa-solid fa-check"></i> ${_t().confirmBtn}`;
     f.appendChild(btn);
     return f;
 }
@@ -284,12 +319,12 @@ function _seat(num, availableSet, onSeatClick) {
     btn.textContent = num;
     if (availableSet.has(num)) {
         btn.classList.add('avail');
-        btn.title = `Koltuk ${num} — Boş`;
+        btn.title = _t().seatAvail(num);
         btn.addEventListener('click', () => onSeatClick(num));
     } else {
         btn.classList.add('occ');
         btn.disabled = true;
-        btn.title = `Koltuk ${num} — Dolu`;
+        btn.title = _t().seatOcc(num);
     }
     return btn;
 }

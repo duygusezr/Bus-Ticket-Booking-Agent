@@ -226,15 +226,19 @@ export function initWebSocket() {
             console.log('[VISEME] kelime sayisi:', (data.words||[]).length);
             await playBase64Audio(data.content, data.words || [], currentFullResponse.trim());
         } else if (data.type === 'seat_map') {
-            // Koltuk haritası popup'u göster
+            // Koltuk haritası popup'u göster (aktif dile göre)
             showSeatMap(
                 data.available_seats || '',
                 data.occupied_seats  || '',
                 (selectedSeat) => {
-                    // Kullanıcı koltuğu seçip onayladı: mesaj olarak gönder
-                    if (chatInput) chatInput.value = String(selectedSeat);
-                    sendMessage(`${selectedSeat} numaralı koltuğu seçiyorum`);
-                }
+                    // Kullanıcı koltuğu seçip onayladı: mesaj olarak gönder (dile göre)
+                    const seatMsg = _currentLang === 'en'
+                        ? `I'll choose seat number ${selectedSeat}`
+                        : `${selectedSeat} numaralı koltuğu seçiyorum`;
+                    if (chatInput) chatInput.value = seatMsg;
+                    sendMessage(seatMsg);
+                },
+                _currentLang
             );
         } else if (data.type === 'done') {
             isSending = false;
