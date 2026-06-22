@@ -149,7 +149,28 @@ def _is_email_context(text: str) -> bool:
 
 
 def _is_name_context(history_last: str) -> bool:
-    """Asistan isim soruyorsa numeric normalizasyon yapma."""
+    """
+    Asistan GERÇEKTEN isim soruyorsa (ve TC/telefon/numara bağlamı YOKSA)
+    numeric normalizasyonu atla.
+
+    DÜZELTME: Eski kod sadece "isim", "adınız" gibi kelimelerin mesajda
+    GEÇİP geçmediğine bakıyordu. Ama asistan "Adınızı aldım, teşekkürler.
+    Şimdi T.C. kimlik numaranızı söyler misiniz?" gibi bir mesaj kurduğunda
+    (isim onayı + TC sorusu aynı cümlede), bu fonksiyon "adınız" kelimesini
+    görüp isim bağlamı sanıyor ve kullanıcı TC kimliğini söylerken sayı
+    dönüşümünü TAMAMEN atlıyordu — TC kimlik kelime kelime kalıyordu.
+
+    Artık mesajda TC/numara/telefon/e-posta ile ilgili herhangi bir ipucu
+    varsa, bu artık isim sorusu/onayı değil — numeric context'e izin verilir.
+    """
+    non_name_hints = [
+        "kimlik", "t.c.", "tc numara", "tc kimlik", "telefon", "numara",
+        "e-posta", "eposta", "email", "mail", "id number", "identity",
+        "phone",
+    ]
+    if any(kw in history_last for kw in non_name_hints):
+        return False
+
     name_keywords = [
         # TR
         "ad soyad", "isim", "adınız", "soyadınız", "ad ve soyad",
